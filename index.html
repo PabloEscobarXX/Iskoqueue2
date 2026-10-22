@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>IskoQueue – Food stalls around PUP</title>
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;700;800&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+  <!-- Leaflet (free map library, uses OpenStreetMap – no API key needed) -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+  <!-- ========== PAGE 1: Home / search ========== -->
+  <section class="home" id="home" hidden>
+    <nav class="home-nav">
+      <div class="nav-brand">
+        <img class="logo logo-md" src="images/pup-logo.png" alt="PUP logo" onerror="this.style.display='none'" />
+        <span>IskoQueue</span>
+      </div>
+      <div class="account" id="account-home"></div>
+    </nav>
+
+    <div class="home-inner">
+      <div class="home-hero">
+        <div class="food-sticker sticker-one" aria-hidden="true">🍢</div>
+        <div class="food-sticker sticker-two" aria-hidden="true">🍔</div>
+        <div class="food-sticker sticker-three" aria-hidden="true">🧋</div>
+        <p class="eyebrow">GOOD FOOD. LESS WAITING.</p>
+        <h1>What are you craving right now?</h1>
+        <p class="home-sub">Find food stalls inside PUP Sta. Mesa, see their menus, and check where they are.</p>
+
+        <form class="crave" id="crave-form" role="search">
+          <label class="sr-only" for="crave-input">What are you craving?</label>
+          <input id="crave-input" type="search" placeholder="Try &quot;milk tea&quot;, &quot;silog&quot; or &quot;turon&quot;" autocomplete="off" />
+          <button type="submit">Find food <span aria-hidden="true">→</span></button>
+        </form>
+
+        <div class="home-group">
+          <p class="home-label">Popular right now</p>
+          <div class="home-chips" id="suggest"></div>
+        </div>
+      </div>
+
+      <div class="home-group">
+        <p class="home-label">What are you craving?</p>
+        <div class="home-chips" id="home-cats"></div>
+      </div>
+
+      <section class="promo-banner" aria-label="Featured promotion">
+        <div class="promo-copy">
+          <span class="promo-tag">TODAY'S PICK · SPONSORED</span>
+          <h2>Good food, right around the corner.</h2>
+          <p>Discover campus favorites and order straight from the stall.</p>
+          <button type="button" class="promo-button" id="promo-browse">Explore stalls <span aria-hidden="true">→</span></button>
+        </div>
+        <div class="promo-art" aria-hidden="true"><span>🍗</span><span>🍟</span><span>🥤</span></div>
+      </section>
+
+      <section class="how-it-works" aria-labelledby="how-title">
+        <div>
+          <p class="section-kicker">SIMPLE AS 1, 2, 3</p>
+          <h2 id="how-title">How IskoQueue works</h2>
+        </div>
+        <div class="steps">
+          <article class="step"><span>01</span><div><h3>Find your food</h3><p>Browse stalls or search for a dish.</p></div></article>
+          <article class="step"><span>02</span><div><h3>Add to your cart</h3><p>Choose items from a stall's menu.</p></div></article>
+          <article class="step"><span>03</span><div><h3>Pick up &amp; pay</h3><p>Confirm payment directly with the stall. This demo does not process payments.</p></div></article>
+        </div>
+      </section>
+
+      <section class="stall-section" aria-labelledby="stalls-title">
+        <div class="section-heading">
+          <div><p class="section-kicker">YOUR CAMPUS FOOD GUIDE</p><h2 id="stalls-title">Stalls around PUP</h2></div>
+          <button class="link-btn" type="button" id="see-all">View map <span aria-hidden="true">→</span></button>
+        </div>
+        <p class="demo-note">28 demo stall listings · Sample information only</p>
+        <div class="stall-circles" id="home-stalls"></div>
+      </section>
+    </div>
+  </section>
+
+  <!-- ========== PAGE 2: Log in / Sign up ========== -->
+  <section class="auth" id="auth" hidden>
+    <div class="auth-card">
+      <img class="logo logo-lg" src="images/pup-logo.png" alt="PUP logo" onerror="this.style.display='none'" />
+      <h2 id="auth-title">Log in</h2>
+      <p class="auth-sub" id="auth-sub">Welcome back.</p>
+
+      <div class="auth-tabs">
+        <button type="button" id="tab-login" aria-pressed="true">Log in</button>
+        <button type="button" id="tab-signup" aria-pressed="false">Sign up</button>
+      </div>
+
+      <form id="login-form">
+        <label for="login-email">Email</label>
+        <input id="login-email" type="email" required autocomplete="email" />
+        <label for="login-password">Password</label>
+        <input id="login-password" type="password" required autocomplete="current-password" />
+        <button class="submit" type="submit">Log in</button>
+      </form>
+
+      <form id="signup-form" hidden>
+        <label for="signup-name">Full name</label>
+        <input id="signup-name" type="text" required autocomplete="name" />
+        <label for="signup-email">Email</label>
+        <input id="signup-email" type="email" required autocomplete="email" />
+        <label for="signup-password">Password (at least 8 characters)</label>
+        <input id="signup-password" type="password" required minlength="8" autocomplete="new-password" />
+        <button class="submit" type="submit">Create account</button>
+      </form>
+
+      <p class="form-msg" id="auth-msg" role="alert"></p>
+    </div>
+  </section>
+
+  <!-- ========== PAGE 3: Results (list + map) ========== -->
+  <div id="results" hidden>
+    <header class="topbar">
+      <h1 class="brand">
+        <button type="button" id="brand">
+          <img class="logo logo-sm" src="images/pup-logo.png" alt="PUP logo" onerror="this.style.display='none'" />
+          <span>IskoQueue</span>
+        </button>
+      </h1>
+      <label class="search">
+        <span class="sr-only">Search stalls or dishes</span>
+        <input id="search" type="search" placeholder="Search a stall or a dish" autocomplete="off" />
+      </label>
+      <div class="account" id="account-results"></div>
+    </header>
+
+    <div class="chips" id="chips" role="group" aria-label="Filter by category"></div>
+
+    <main class="layout">
+      <section class="panel" id="panel">
+        <!-- List of businesses -->
+        <div id="list-view">
+          <p class="count" id="count" aria-live="polite"></p>
+          <ul class="cards" id="cards"></ul>
+        </div>
+
+        <!-- Details + menu of one business -->
+        <article id="detail-view" hidden></article>
+      </section>
+
+      <div id="map" aria-label="Map of food stalls"></div>
+    </main>
+  </div>
+
+  <div class="cart-dock" id="cart-dock">
+    <button class="cart-toggle" type="button" id="cart-toggle" aria-expanded="false" aria-controls="cart-panel">
+      <span class="cart-icon" aria-hidden="true">🛒</span>
+      <span class="cart-label">Your cart</span>
+      <span class="cart-count" id="cart-count">0</span>
+      <span class="cart-total" id="cart-total">₱0</span>
+    </button>
+    <section class="cart-panel" id="cart-panel" aria-labelledby="cart-title" hidden>
+      <div class="cart-heading"><h2 id="cart-title">Your cart</h2><button type="button" id="cart-close" aria-label="Close cart">×</button></div>
+      <p class="cart-message" id="cart-message" role="status"></p>
+      <div id="cart-content">
+        <p class="cart-hint">Choose items from one stall per order.</p>
+        <ul class="cart-items" id="cart-items"></ul>
+        <p class="cart-empty" id="cart-empty">Your cart is empty. Add something tasty!</p>
+        <button class="cart-checkout" type="button" id="cart-checkout" disabled>Continue to checkout</button>
+      </div>
+      <div id="checkout-flow" hidden>
+        <div class="checkout-progress"><span id="checkout-step-label">1 of 2 · Pickup</span><button type="button" id="checkout-back">Back</button></div>
+        <div id="pickup-step">
+          <h3>Pickup time</h3>
+          <p class="pickup-estimate" id="pickup-estimate"></p>
+          <p class="cart-hint">Preparation estimate based on your order size. Live queue/customer counts aren’t connected.</p>
+          <fieldset class="pickup-options">
+            <legend>When would you like to pick up?</legend>
+            <label><input type="radio" name="pickup-option" value="now" checked /> As soon as ready</label>
+            <label><input type="radio" name="pickup-option" value="later" /> Schedule for later</label>
+          </fieldset>
+          <label class="pickup-time-label" id="pickup-time-label" hidden for="pickup-time">Choose a pickup time</label>
+          <input id="pickup-time" class="pickup-time-input" type="datetime-local" hidden />
+          <button class="cart-checkout" type="button" id="review-order">Review order</button>
+        </div>
+        <div id="review-step" hidden>
+          <h3>Review your order</h3>
+          <p class="review-vendor" id="review-vendor"></p>
+          <ul class="cart-items review-items" id="review-items"></ul>
+          <div class="review-total"><span>Total</span><strong id="review-total"></strong></div>
+          <p class="review-pickup" id="review-pickup"></p>
+          <fieldset class="payment-options">
+            <legend>Payment method</legend>
+            <label><input type="radio" name="payment-method" value="gcash" /> GCash</label>
+            <label><input type="radio" name="payment-method" value="maya" /> Maya</label>
+          </fieldset>
+          <div class="vendor-qr" id="vendor-qr" hidden></div>
+          <button class="cart-checkout" type="button" id="place-order" disabled>Place order</button>
+          <p class="cart-hint payment-warning">Demo checkout only. Confirm payment with the vendor; payment is not processed by this app.</p>
+        </div>
+        <div class="order-complete" id="order-complete" hidden>
+          <h3>Order submitted!</h3>
+          <p id="order-complete-message"></p>
+          <button class="cart-checkout" type="button" id="new-order">Done</button>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
