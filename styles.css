@@ -148,12 +148,12 @@ h1, h2, h3 {
 
 /* ---------- Map markers ---------- */
 .pin {
-  width: 38px; height: 38px; border-radius: 50% 50% 50% 0;
+  width: 26px; height: 26px; border-radius: 50% 50% 50% 0;
   transform: rotate(-45deg);
   display: grid; place-items: center;
   border: 2px solid #fff; box-shadow: 0 2px 6px rgba(0,0,0,.35);
 }
-.pin span { transform: rotate(45deg); font-size: 1.15rem; }
+.pin span { transform: rotate(45deg); font-size: .8rem; }
 
 /* ---------- Mobile: map on top, list below ---------- */
 @media (max-width: 800px) {
@@ -266,22 +266,133 @@ h1, h2, h3 {
 
 /* ---------- Log in / Sign up page ---------- */
 .auth {
+  position: relative; isolation: isolate; overflow: hidden;
   min-height: 100vh;
   display: grid; place-items: center;
   padding: 24px;
-  background: var(--accent);
+  background:
+    radial-gradient(ellipse at 8% 15%, rgba(233,182,59,.2), transparent 25%),
+    radial-gradient(ellipse at 92% 82%, rgba(233,182,59,.18), transparent 27%),
+    var(--accent);
 }
+.auth-doodle-field {
+  position: absolute; z-index: 0; inset: 0;
+  overflow: hidden; pointer-events: none;
+}
+.auth-doodle {
+  position: absolute; display: block;
+  color: rgba(255,226,157,.82);
+  filter: drop-shadow(0 5px 10px rgba(37,5,11,.14));
+  animation: doodle-drift 4.5s ease-in-out infinite alternate;
+}
+.doodle-star { font-size: clamp(2.8rem, 5vw, 5rem); }
+.doodle-food { font-size: clamp(2.4rem, 4.2vw, 4rem); }
+.doodle-spark { color: rgba(255,255,255,.68); font-size: 2rem; }
+.doodle-squiggle { width: 140px; fill: none; stroke: rgba(255,226,157,.66); stroke-width: 3; stroke-linecap: round; }
+.doodle-a { top: 8%; left: 7%; rotate: -14deg; }
+.doodle-b { top: 7%; left: 4%; rotate: 12deg; animation-delay: -.9s; }
+.doodle-d { bottom: 16%; left: 4%; rotate: -14deg; animation-delay: -.5s; }
+.doodle-e { top: 8%; left: 18%; rotate: 14deg; }
+.doodle-f { top: 9%; right: 8%; rotate: 10deg; animation-delay: -1.2s; }
+.doodle-h { top: 8%; right: 18%; rotate: -12deg; }
+.doodle-i { bottom: 12%; right: 4%; rotate: 12deg; animation-delay: -.7s; }
+.doodle-j { top: 7%; right: 4%; rotate: -10deg; animation-delay: -1.6s; }
+.doodle-k { bottom: 4%; left: 3%; rotate: -8deg; }
+.doodle-l { bottom: 4%; right: 3%; rotate: 8deg; animation-delay: -1.3s; }
+@keyframes doodle-drift { from { translate: 0 5px; } to { translate: 0 -7px; } }
+.auth-side-design {
+  position: absolute; z-index: 1; top: 50%;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  width: 160px; min-height: 300px; padding: 20px 12px;
+  border: 1px solid rgba(255,255,255,.22); border-radius: 82px 82px 26px 26px;
+  background: linear-gradient(160deg, rgba(255,255,255,.14), rgba(255,255,255,.045));
+  color: rgba(255,255,255,.78); text-align: center;
+  box-shadow: inset 0 0 40px rgba(255,255,255,.035), 0 20px 44px rgba(35,5,10,.12);
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+.auth-side-left { left: max(2vw, calc((100vw - 1120px) / 2)); rotate: -5deg; }
+.auth-side-right { right: max(2vw, calc((100vw - 1120px) / 2)); rotate: 5deg; }
+.side-food { display: grid; place-items: center; width: 66px; height: 66px; border: 1px solid rgba(255,255,255,.22); border-radius: 50%; background: rgba(255,255,255,.1); font-size: 2.3rem; filter: drop-shadow(0 10px 14px rgba(27,4,8,.18)); animation: side-float 2.8s ease-in-out infinite alternate; }
+.side-food-bottom { width: 54px; height: 54px; margin-top: 16px; font-size: 1.8rem; animation-delay: .7s; }
+.side-copy { margin-top: 18px; font-size: .8rem; letter-spacing: .15em; line-height: 1.7; }
+.side-copy strong { color: var(--gold); font-size: 1rem; }
+.side-doodle { margin-top: 16px; padding: 6px 9px; border: 1px dashed rgba(255,255,255,.42); border-radius: 999px; color: rgba(255,255,255,.64); font-size: .55rem; font-weight: 700; letter-spacing: .12em; line-height: 1.5; }
+.side-orbit { position: absolute; color: var(--gold); font-size: 2rem; animation: mascot-twinkle 1.6s ease-in-out infinite alternate; }
+.side-orbit-one { top: 34px; right: 28px; }
+.side-orbit-two { bottom: 38px; left: 27px; animation-delay: .6s; }
+@keyframes side-float { from { transform: translateY(4px) rotate(-7deg); } to { transform: translateY(-8px) rotate(7deg); } }
 .auth-card {
+  position: relative; z-index: 2;
   width: 100%; max-width: 420px;
   padding: 32px 28px 24px;
   background: var(--surface); border-radius: 20px;
   box-shadow: 0 12px 32px rgba(0,0,0,.28);
 }
+.auth-mascot {
+  position: relative; overflow: hidden;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  min-height: 230px; margin: -32px -28px 24px; padding: 12px 16px 18px;
+  border-radius: 20px 20px 0 0;
+  background:
+    radial-gradient(circle at 18% 22%, rgba(255,255,255,.15) 0 2px, transparent 3px),
+    radial-gradient(circle at 83% 68%, rgba(255,255,255,.12) 0 3px, transparent 4px),
+    linear-gradient(145deg, #8f2633, #57131e);
+  color: #fff;
+}
+.login-wordmark {
+  position: relative; z-index: 1;
+  display: flex; align-items: center; gap: 0;
+  align-self: center; margin: 0 0 5px; padding: 5px 13px 5px 7px;
+  border: 1px solid rgba(255,255,255,.28); border-radius: 999px;
+  background: rgba(60,12,21,.38); box-shadow: 0 4px 12px rgba(30,5,10,.14);
+  font-family: "Bricolage Grotesque", sans-serif; font-size: 1.05rem;
+  font-weight: 800; letter-spacing: -.035em; line-height: 1;
+}
+.wordmark-sticker { display: grid; place-items: center; width: 25px; height: 25px; margin-right: 7px; border-radius: 50%; background: var(--gold); font-family: sans-serif; font-size: .85rem; }
+.wordmark-isko { color: #fff; }
+.wordmark-queue { color: var(--gold); }
+.wordmark-spark { align-self: flex-start; margin: -3px 0 0 3px; color: #ffe7a7; font-size: .7rem; }
+.dancing-bear { display: block; width: 190px; height: 164px; overflow: visible; }
+.bear-shadow { fill: rgba(30, 8, 12, .24); transform-origin: center; animation: bear-shadow 1s ease-in-out infinite; }
+.bear-body, .bear-leg { fill: #bd7548; stroke: #713d2b; stroke-width: 2; stroke-linejoin: round; }
+.bear-belly, .bear-muzzle { fill: #f2d3ac; }
+.bear-ear { fill: #bd7548; stroke: #713d2b; stroke-width: 2; }
+.bear-ear-inner, .bear-cheek { fill: #e99b91; }
+.bear-face { fill: #bd7548; stroke: #713d2b; stroke-width: 2; }
+.bear-eye, .bear-nose { fill: #39231f; }
+.bear-smile { fill: none; stroke: #39231f; stroke-width: 2; stroke-linecap: round; }
+.bear-arm { fill: none; stroke: #bd7548; stroke-width: 13; stroke-linecap: round; stroke-linejoin: round; }
+.bear-cup { fill: #f1c44e; stroke: #fff3c6; stroke-width: 2; stroke-linejoin: round; }
+.bear-cup circle { fill: #5a2430; stroke: none; }
+.bear-dance { transform-box: fill-box; transform-origin: center bottom; animation: bear-bounce .65s ease-in-out infinite alternate; }
+.bear-head { transform-box: fill-box; transform-origin: center bottom; animation: bear-groove .65s ease-in-out infinite alternate; }
+.bear-arm-left { transform-box: fill-box; transform-origin: 85% 90%; animation: bear-wave .55s ease-in-out infinite alternate; }
+.bear-arm-right { transform-box: fill-box; transform-origin: 15% 90%; animation: bear-wave .55s ease-in-out infinite alternate-reverse; }
+.bear-leg-left { transform-box: fill-box; transform-origin: top center; animation: bear-step .55s ease-in-out infinite alternate; }
+.bear-leg-right { transform-box: fill-box; transform-origin: top center; animation: bear-step .55s ease-in-out infinite alternate-reverse; }
+.mascot-spark, .mascot-note { position: absolute; color: var(--gold); font-weight: 800; pointer-events: none; }
+.mascot-spark { animation: mascot-twinkle 1.4s ease-in-out infinite alternate; }
+.mascot-spark-one { top: 32px; left: 18%; font-size: 1.5rem; }
+.mascot-spark-two { top: 70px; right: 17%; font-size: 1.8rem; animation-delay: .5s; }
+.mascot-note { color: #ffe6a3; font-size: 1.4rem; animation: mascot-float 1.6s ease-in-out infinite alternate; }
+.mascot-note-one { top: 44px; right: 28%; }
+.mascot-note-two { top: 90px; left: 22%; animation-delay: .4s; }
+.mascot-tagline { margin: -2px 0 0; font-family: "Bricolage Grotesque", sans-serif; font-size: 1.45rem; font-weight: 800; }
+.mascot-tagline span { color: var(--gold); }
+.mascot-caption { margin: 2px 0 0; color: rgba(255,255,255,.76); font-size: .82rem; }
+@keyframes bear-bounce { from { transform: translateY(0) rotate(-3deg); } to { transform: translateY(-5px) rotate(3deg); } }
+@keyframes bear-groove { from { transform: rotate(-4deg); } to { transform: rotate(4deg); } }
+@keyframes bear-wave { from { rotate: -9deg; } to { rotate: 12deg; } }
+@keyframes bear-step { from { rotate: -7deg; } to { rotate: 7deg; } }
+@keyframes bear-shadow { from { transform: scaleX(.88); opacity: .7; } to { transform: scaleX(1.08); opacity: 1; } }
+@keyframes mascot-twinkle { from { transform: scale(.75) rotate(-12deg); opacity: .55; } to { transform: scale(1.12) rotate(12deg); opacity: 1; } }
+@keyframes mascot-float { from { transform: translateY(3px) rotate(-8deg); } to { transform: translateY(-5px) rotate(8deg); } }
 .auth-card h2 { text-align: center; font-size: 1.8rem; font-weight: 800; color: var(--accent); }
 .auth-sub { text-align: center; margin: 4px 0 20px; color: var(--muted); }
 
 .auth-tabs {
-  display: grid; grid-template-columns: 1fr 1fr; gap: 4px;
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px;
   padding: 4px; margin-bottom: 18px;
   background: var(--bg); border-radius: 999px;
 }
@@ -297,6 +408,10 @@ h1, h2, h3 {
   padding: 11px 14px; border: 1px solid var(--line); border-radius: 10px;
   font: inherit; background: #fff; color: var(--ink);
 }
+.auth-card select {
+  padding: 11px 14px; border: 1px solid var(--line); border-radius: 10px;
+  font: inherit; background: #fff; color: var(--ink);
+}
 .auth-card .submit {
   margin-top: 18px; padding: 12px; border: 0; border-radius: 999px;
   background: var(--accent); color: #fff;
@@ -308,9 +423,73 @@ h1, h2, h3 {
 .form-msg.ok { color: var(--open); }
 .link-btn.dark { display: block; margin: 8px auto 0; color: var(--accent); }
 
+@media (prefers-reduced-motion: reduce) {
+  .bear-shadow, .bear-dance, .bear-head, .bear-arm-left, .bear-arm-right,
+  .bear-leg-left, .bear-leg-right, .mascot-spark, .mascot-note, .side-food, .side-orbit,
+  .auth-doodle {
+    animation: none;
+  }
+}
+
+@media (max-width: 760px) {
+  .auth-side-design { display: none; }
+  .auth-doodle-field { display: none; }
+}
+
+/* ---------- Local demo admin panel ---------- */
+.admin-page { min-height: 100vh; padding: 32px; }
+.admin-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
+.admin-header h1 { color: var(--accent); }
+.admin-actions { display: flex; align-items: center; gap: 12px; }
+.admin-logout {
+  padding: 8px 18px; border: 1px solid var(--accent); border-radius: 999px;
+  background: var(--accent); color: #fff; font: inherit; font-weight: 600; cursor: pointer;
+}
+.admin-notice {
+  padding: 12px 16px; border: 1px solid #e6c973; border-radius: 10px;
+  background: #fff7db; color: #594718;
+}
+.admin-card {
+  margin-top: 20px; padding: 20px; background: var(--surface);
+  border: 1px solid var(--line); border-radius: var(--radius);
+}
+.admin-card h2 { display: flex; align-items: center; gap: 10px; font-size: 1.2rem; }
+#admin-user-count {
+  display: inline-grid; min-width: 28px; height: 28px; padding: 0 7px;
+  place-items: center; border-radius: 999px; background: var(--accent-soft);
+  color: var(--accent); font-size: .9rem;
+}
+.admin-table-wrap { overflow-x: auto; margin-top: 14px; }
+.admin-table { width: 100%; border-collapse: collapse; text-align: left; }
+.admin-table th, .admin-table td { padding: 12px; border-bottom: 1px solid var(--line); }
+.admin-table th { color: var(--muted); font-size: .88rem; }
+.admin-empty { color: var(--muted); }
+.vendor-summary { max-width: 460px; }
+.vendor-sales-total { margin: 10px 0 0; color: var(--accent); font-size: 2.2rem; font-weight: 800; }
+.vendor-order-count { margin: 0; color: var(--muted); }
+.vendor-received { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--line); }
+.vendor-received h3 { font-size: 1rem; }
+.vendor-received-total { margin: 6px 0 0; color: var(--open); font-size: 1.6rem; font-weight: 800; }
+.vendor-demo-credentials { margin: 8px 0; padding: 10px; border-radius: 10px; background: var(--bg); color: var(--muted); font-size: .88rem; text-align: center; }
+.vendor-orders-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.vendor-orders-heading h2 { display: flex; align-items: center; gap: 10px; }
+#vendor-pending-count { display: inline-grid; min-width: 28px; height: 28px; padding: 0 7px; place-items: center; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-size: .9rem; }
+.vendor-order-alert { color: var(--muted); }
+.vendor-confirm-button { padding: 8px 12px; border: 0; border-radius: 999px; background: var(--open); color: #fff; font: inherit; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.vendor-confirm-button:hover { filter: brightness(.92); }
+
 @media (max-width: 520px) {
   .nav-brand span { font-size: 1.1rem; }
   .home-nav { padding: 12px 16px; }
+  .auth { padding: 14px; }
+  .auth-side-design { display: none; }
+  .auth-card { padding: 26px 20px 20px; }
+  .auth-mascot { min-height: 210px; margin: -26px -20px 22px; }
+  .dancing-bear { width: 170px; height: 145px; }
+  .auth-tabs button { padding: 8px 4px; font-size: .9rem; }
+  .admin-page { padding: 20px 14px; }
+  .admin-header { align-items: flex-start; flex-direction: column; }
+  .admin-actions { flex-wrap: wrap; }
 }
 
 /* ---------- Food discovery home ---------- */
