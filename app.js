@@ -17,20 +17,19 @@ const $suggest = document.getElementById("suggest");
 const $homeCats = document.getElementById("home-cats");
 const $homeStalls = document.getElementById("home-stalls");
 const $auth = document.getElementById("auth");
+const $adminPanel = document.getElementById("admin-panel");
+const $vendorPanel = document.getElementById("vendor-panel");
 const cart = new Map();
 
 // ---------- Map setup ----------
-// Luntiang Pilipinas Forest Park loop. Keep the map focused on the requested area.
+// Start focused on the stalls while allowing fitBounds to zoom in along the route.
 const PUP_CENTER = [14.59765, 121.01034];
-const PUP_BOUNDS = L.latLngBounds([14.5969, 121.0093], [14.5985, 121.0114]);
 
 const map = L.map("map", {
   center: PUP_CENTER,
   zoom: 18,
   minZoom: 17,
   maxZoom: 19,
-  maxBounds: PUP_BOUNDS,    // keep the map near the park loop
-  maxBoundsViscosity: 1.0,  // hard stop at the edge
 });
 
 L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
@@ -44,8 +43,8 @@ function makePin(stall) {
   return L.divIcon({
     className: "",
     html: `<div class="pin" style="background:${stall.color}"><span>${stall.emoji}</span></div>`,
-    iconSize: [38, 38],
-    iconAnchor: [19, 38],
+    iconSize: [26, 26],
+    iconAnchor: [13, 26],
   });
 }
 
@@ -140,7 +139,7 @@ function renderList() {
 
   // zoom the map so every result is visible
   const bounds = L.latLngBounds(results.map((s) => [s.lat, s.lng]));
-  map.fitBounds(bounds, { padding: [50, 50], maxZoom: 18 });
+  map.fitBounds(bounds, { padding: [50, 50], maxZoom: 19 });
 }
 
 // ---------- Detail view (menu + location) ----------
@@ -296,6 +295,9 @@ const $pickupTimeLabel = document.getElementById("pickup-time-label");
 const $vendorQr = document.getElementById("vendor-qr");
 const $placeOrder = document.getElementById("place-order");
 let selectedPayment = "";
+let activeCustomerOrderId = "";
+let vendorAudioContext = null;
+let vendorOrderSoundEnabled = false;
 
 function addToCart(stall, item) {
   const currentStallId = cart.size ? Number([...cart.keys()][0].split(":")[0]) : null;
@@ -475,8 +477,32 @@ document.querySelectorAll('input[name="payment-method"]').forEach((radio) => {
 
 $placeOrder.addEventListener("click", () => {
   if (!selectedPayment || !cart.size) return;
+  const items = [...cart.values()];
+  const stallId = Number(items[0].key.split(":")[0]);
+  const orderTotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  try {
+    const savedOrders = localStorage.getItem(ORDERS_KEY);
+    const orders = savedOrders ? JSON.parse(savedOrders) : [];
+    if (!Array.isArray(orders)) throw new Error("Saved order data is invalid.");
+    orders.push({
+      id: createOrderId(),
+      stallId,
+      createdAt: new Date().toISOString(),
+      total: orderTotal,
+      itemSummary: items.map((item) => `${item.quantity} × ${item.name}`).join(", "),
+      payment: selectedPayment,
+      paymentStatus: "unpaid",
+      orderStatus: "awaiting-confirmation",
+    });
+    localStorage.setItem(ORDERS_KEY, JSON.stringify(orders));
+    activeCustomerOrderId = orders[orders.length - 1].id;
+  } catch (err) {
+    $cartMessage.textContent = `This demo order could not be saved: ${err.message}`;
+    return;
+  }
   document.getElementById("order-complete-message").textContent =
-    `Your demo order is ready for vendor confirmation. Pickup: ${selectedPickupDescription()}. Payment: ${selectedPayment === "gcash" ? "GCash" : "Maya"}. No payment was collected.`;
+    `Your demo order was sent to the vendor. Pickup: ${selectedPickupDescription()}. Payment: ${selectedPayment === "gcash" ? "GCash" : "Maya"}. This app did not collect or verify payment.`;
+  document.getElementById("order-vendor-status").textContent = "Waiting for the vendor to confirm your order/payment.";
   $reviewStep.hidden = true;
   $orderComplete.hidden = false;
   document.getElementById("checkout-step-label").textContent = "Order submitted";
@@ -497,6 +523,12 @@ document.getElementById("new-order").addEventListener("click", () => {
 // (e.g. Firebase Auth, or Node/Express with hashed passwords on a server).
 const USERS_KEY = "kainan_users";
 const SESSION_KEY = "kainan_session";
+const ORDERS_KEY = "kainan_demo_orders";
+const ADMIN_EMAIL = "admin@iskoqueue.local";
+const ADMIN_PASSWORD = "AdminDemo2026!";
+const DEMO_VENDOR_EMAIL = "demo.vendor@iskoqueue.local";
+const DEMO_VENDOR_PASSWORD = "VendorDemo2026!";
+const DEMO_VENDOR_STALL_ID = 1;
 
 function getUsers() {
   try { return JSON.parse(localStorage.getItem(USERS_KEY)) || {}; } catch { return {}; }
@@ -504,7 +536,27 @@ function getUsers() {
 function saveUsers(users) { localStorage.setItem(USERS_KEY, JSON.stringify(users)); }
 
 function currentUser() {
-  try { return JSON.parse(localStorage.getItem(SESSION_KEY)); } catch { return null; }
+  try {
+    let session = sessionStorage.getItem(SESSION_KEY);
+    if (!session) {
+      session = localStorage.getItem(SESSION_KEY);
+      if (session) {
+        sessionStorage.setItem(SESSION_KEY, session);
+        localStorage.removeItem(SESSION_KEY);
+      }
+    }
+    return session ? JSON.parse(session) : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveSession(session) {
+  sessionStorage.setItem(SESSION_KEY, JSON.stringify(session));
+}
+
+function clearSession() {
+  sessionStorage.removeItem(SESSION_KEY);
 }
 
 async function hashPassword(password, salt) {
@@ -521,6 +573,74 @@ function randomSalt() {
     .map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
+function createOrderId() {
+  if (window.crypto && typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  return `${Date.now()}-${randomSalt()}`;
+}
+
+async function ensureDemoVendorData() {
+  const users = getUsers();
+  const demoVendor = users[DEMO_VENDOR_EMAIL];
+  if (!demoVendor || demoVendor.demoAccount !== true) {
+    const salt = randomSalt();
+    users[DEMO_VENDOR_EMAIL] = {
+      name: "Demo Vendor",
+      role: "vendor",
+      stallId: DEMO_VENDOR_STALL_ID,
+      demoAccount: true,
+      salt,
+      hash: await hashPassword(DEMO_VENDOR_PASSWORD, salt),
+      createdAt: new Date().toISOString(),
+    };
+    saveUsers(users);
+  }
+
+  const storedOrders = localStorage.getItem(ORDERS_KEY);
+  const orders = storedOrders ? JSON.parse(storedOrders) : [];
+  if (!Array.isArray(orders)) throw new Error("Saved order data is invalid.");
+  let ordersChanged = false;
+  orders.forEach((order) => {
+    if (!order || typeof order !== "object") return;
+    if (!order.id) {
+      order.id = createOrderId();
+      ordersChanged = true;
+    }
+    if (!order.orderStatus) {
+      order.orderStatus = order.demoSample === true ? "confirmed" : "awaiting-confirmation";
+      ordersChanged = true;
+    }
+    if (order.demoSample === true && order.paymentStatus !== "demo-received") {
+      order.paymentStatus = "demo-received";
+      ordersChanged = true;
+    }
+  });
+  if (orders.some((order) => order && order.demoSample === true)) {
+    if (ordersChanged) localStorage.setItem(ORDERS_KEY, JSON.stringify(orders));
+    return;
+  }
+
+  const now = Date.now();
+  const sampleOrders = [
+    { daysAgo: 0, total: 140, itemSummary: "2 × Isaw (5 sticks), 1 × Kwek-kwek (6 pcs)", payment: "gcash" },
+    { daysAgo: 1, total: 95, itemSummary: "1 × Isaw (5 sticks), 2 × Fishball cup", payment: "maya" },
+    { daysAgo: 2, total: 190, itemSummary: "2 × Isaw (5 sticks), 2 × Kwek-kwek (6 pcs)", payment: "gcash" },
+  ];
+  sampleOrders.forEach((order) => {
+    orders.push({
+      id: createOrderId(),
+      stallId: DEMO_VENDOR_STALL_ID,
+      createdAt: new Date(now - order.daysAgo * 24 * 60 * 60 * 1000).toISOString(),
+      total: order.total,
+      itemSummary: order.itemSummary,
+      payment: order.payment,
+      paymentStatus: "demo-received",
+      orderStatus: "confirmed",
+      demoSample: true,
+    });
+  });
+  localStorage.setItem(ORDERS_KEY, JSON.stringify(orders));
+}
+
 // "Log in" button, or "Hi, Name" + "Log out" (top right of home and results pages)
 function renderAccount() {
   const user = currentUser();
@@ -531,11 +651,28 @@ function renderAccount() {
       const who = document.createElement("span");
       who.className = "who";
       who.textContent = "Hi, " + user.name.split(" ")[0]; // textContent keeps user input safe
+      if (user.role === "admin") {
+        const adminButton = document.createElement("button");
+        adminButton.type = "button";
+        adminButton.textContent = "Signups";
+        adminButton.addEventListener("click", openAdminPanel);
+        box.appendChild(adminButton);
+      } else if (user.role === "vendor") {
+        const vendorButton = document.createElement("button");
+        vendorButton.type = "button";
+        vendorButton.textContent = "Earnings";
+        vendorButton.addEventListener("click", openVendorPanel);
+        box.appendChild(vendorButton);
+      }
       const out = document.createElement("button");
       out.type = "button";
       out.textContent = "Log out";
       out.addEventListener("click", () => {
-        localStorage.removeItem(SESSION_KEY);
+        clearSession();
+        if (user.role === "admin") {
+          $adminPanel.hidden = true;
+          $home.hidden = false;
+        }
         renderAccount();
       });
       box.append(who, out);
@@ -551,17 +688,31 @@ function renderAccount() {
 
 const $loginForm = document.getElementById("login-form");
 const $signupForm = document.getElementById("signup-form");
+const $adminLoginForm = document.getElementById("admin-login-form");
+const $vendorAuth = document.getElementById("vendor-auth");
+const $vendorLoginForm = document.getElementById("vendor-login-form");
+const $vendorSignupForm = document.getElementById("vendor-signup-form");
 const $authMsg = document.getElementById("auth-msg");
+const $adminUserList = document.getElementById("admin-user-list");
+const $adminUserCount = document.getElementById("admin-user-count");
+const $adminEmpty = document.getElementById("admin-empty");
 let viewBeforeAuth = "home";
 
 function setAuthMode(mode) {
   const login = mode === "login";
+  const signup = mode === "signup";
   $loginForm.hidden = !login;
-  $signupForm.hidden = login;
+  $signupForm.hidden = !signup;
+  $adminLoginForm.hidden = mode !== "admin";
+  $vendorAuth.hidden = mode !== "vendor";
+  $vendorLoginForm.hidden = false;
+  $vendorSignupForm.hidden = true;
   document.getElementById("tab-login").setAttribute("aria-pressed", String(login));
-  document.getElementById("tab-signup").setAttribute("aria-pressed", String(!login));
-  document.getElementById("auth-title").textContent = login ? "Log in" : "Create account";
-  document.getElementById("auth-sub").textContent = login ? "Welcome back." : "Sign up to get started.";
+  document.getElementById("tab-signup").setAttribute("aria-pressed", String(signup));
+  document.getElementById("tab-vendor").setAttribute("aria-pressed", String(mode === "vendor"));
+  document.getElementById("tab-admin").setAttribute("aria-pressed", String(mode === "admin"));
+  document.getElementById("auth-title").textContent = login ? "Log in" : signup ? "Create account" : mode === "vendor" ? "Vendor access" : "Admin login";
+  document.getElementById("auth-sub").textContent = login ? "Welcome back." : signup ? "Sign up to get started." : mode === "vendor" ? "Log in or create an account for your stall." : "Local demo admin access.";
   $authMsg.textContent = "";
   $authMsg.className = "form-msg";
 }
@@ -572,7 +723,8 @@ function showAuth(mode = "login") {
   $results.hidden = true;
   $auth.hidden = false;
   setAuthMode(mode);
-  (mode === "login" ? $loginForm : $signupForm).querySelector("input").focus();
+  const form = mode === "login" ? $loginForm : mode === "signup" ? $signupForm : mode === "admin" ? $adminLoginForm : $vendorLoginForm;
+  form.querySelector("input").focus();
 }
 
 function leaveAuth() {
@@ -590,6 +742,251 @@ function authError(msg) {
   $authMsg.className = "form-msg";
 }
 
+function renderAdminUsers() {
+  const users = Object.entries(getUsers())
+    .filter(([, user]) => user && typeof user.name === "string")
+    .sort(([, a], [, b]) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
+  $adminUserCount.textContent = String(users.length);
+  $adminUserList.replaceChildren();
+  $adminEmpty.hidden = users.length > 0;
+
+  users.forEach(([email, user]) => {
+    const row = document.createElement("tr");
+    const nameCell = document.createElement("td");
+    const emailCell = document.createElement("td");
+    const dateCell = document.createElement("td");
+    nameCell.textContent = user.name;
+    emailCell.textContent = email;
+    const date = user.createdAt ? new Date(user.createdAt) : null;
+    dateCell.textContent = date && !Number.isNaN(date.getTime())
+      ? date.toLocaleString()
+      : "Date unavailable";
+    row.append(nameCell, emailCell, dateCell);
+    $adminUserList.appendChild(row);
+  });
+}
+
+function openAdminPanel() {
+  renderAdminUsers();
+  $home.hidden = true;
+  $results.hidden = true;
+  $auth.hidden = true;
+  $adminPanel.hidden = false;
+}
+
+function renderVendorOrders(stallId) {
+  const storedOrders = localStorage.getItem(ORDERS_KEY);
+  const orders = storedOrders ? JSON.parse(storedOrders) : [];
+  if (!Array.isArray(orders)) throw new Error("Saved order data is invalid.");
+  const vendorOrders = orders
+    .filter((order) => order && Number(order.stallId) === Number(stallId) && Number.isFinite(Number(order.total)))
+    .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
+  const total = vendorOrders.reduce((sum, order) => sum + Number(order.total), 0);
+  const receivedOrders = vendorOrders.filter((order) => order.paymentStatus === "demo-received");
+  const vendorConfirmedOrders = vendorOrders.filter((order) => order.paymentStatus === "vendor-confirmed");
+  const allReceivedOrders = [...receivedOrders, ...vendorConfirmedOrders];
+  const receivedTotal = allReceivedOrders.reduce((sum, order) => sum + Number(order.total), 0);
+  document.getElementById("vendor-sales-total").textContent = peso(total);
+  document.getElementById("vendor-order-count").textContent =
+    `${vendorOrders.length} submitted ${vendorOrders.length === 1 ? "order" : "orders"}`;
+  document.getElementById("vendor-received-total").textContent = peso(receivedTotal);
+  document.getElementById("vendor-received-count").textContent =
+    `${allReceivedOrders.length} demo/vendor-confirmed ${allReceivedOrders.length === 1 ? "payment" : "payments"}`;
+  const list = document.getElementById("vendor-order-list");
+  const pendingList = document.getElementById("vendor-pending-list");
+  const pendingOrders = vendorOrders.filter((order) => order.orderStatus !== "confirmed" && order.demoSample !== true);
+  const pendingCount = document.getElementById("vendor-pending-count");
+  pendingCount.textContent = String(pendingOrders.length);
+  document.getElementById("vendor-pending-empty").hidden = pendingOrders.length > 0;
+  pendingList.replaceChildren();
+  pendingOrders.forEach((order) => {
+    const row = document.createElement("tr");
+    const dateCell = document.createElement("td");
+    const itemsCell = document.createElement("td");
+    const totalCell = document.createElement("td");
+    const paymentCell = document.createElement("td");
+    const actionCell = document.createElement("td");
+    const date = new Date(order.createdAt);
+    dateCell.textContent = !Number.isNaN(date.getTime()) ? date.toLocaleString() : "Date unavailable";
+    itemsCell.textContent = String(order.itemSummary || "Items unavailable");
+    totalCell.textContent = peso(Number(order.total));
+    paymentCell.textContent = order.payment === "gcash" ? "GCash" : order.payment === "maya" ? "Maya" : "Unspecified";
+    const confirmButton = document.createElement("button");
+    confirmButton.type = "button";
+    confirmButton.className = "vendor-confirm-button";
+    confirmButton.textContent = "Confirm payment & order";
+    confirmButton.setAttribute("aria-label", `Confirm payment and order for ${peso(Number(order.total))}`);
+    confirmButton.addEventListener("click", () => confirmVendorOrder(order.id, stallId));
+    actionCell.appendChild(confirmButton);
+    row.append(dateCell, itemsCell, totalCell, paymentCell, actionCell);
+    pendingList.appendChild(row);
+  });
+  list.replaceChildren();
+  document.getElementById("vendor-orders-empty").hidden = vendorOrders.length > 0;
+  vendorOrders.forEach((order) => {
+    const row = document.createElement("tr");
+    const dateCell = document.createElement("td");
+    const itemsCell = document.createElement("td");
+    const totalCell = document.createElement("td");
+    const paymentCell = document.createElement("td");
+    const statusCell = document.createElement("td");
+    const date = new Date(order.createdAt);
+    dateCell.textContent = !Number.isNaN(date.getTime()) ? date.toLocaleString() : "Date unavailable";
+    itemsCell.textContent = String(order.itemSummary || "Items unavailable");
+    totalCell.textContent = peso(Number(order.total));
+    const paymentMethod = order.payment === "gcash" ? "GCash" : order.payment === "maya" ? "Maya" : "";
+    paymentCell.textContent = order.paymentStatus === "demo-received"
+      ? `Demo received · ${paymentMethod}`
+      : order.paymentStatus === "vendor-confirmed"
+        ? `Vendor confirmed · ${paymentMethod} (demo)`
+        : `Unpaid${paymentMethod ? ` · ${paymentMethod}` : ""}`;
+    statusCell.textContent = order.orderStatus === "confirmed" ? "Confirmed" : "Awaiting confirmation";
+    row.append(dateCell, itemsCell, totalCell, paymentCell, statusCell);
+    list.appendChild(row);
+  });
+}
+
+function confirmVendorOrder(orderId, stallId) {
+  try {
+    const storedOrders = localStorage.getItem(ORDERS_KEY);
+    const orders = storedOrders ? JSON.parse(storedOrders) : [];
+    if (!Array.isArray(orders)) throw new Error("Saved order data is invalid.");
+    const order = orders.find((entry) => entry && entry.id === orderId && Number(entry.stallId) === Number(stallId));
+    if (!order || order.orderStatus === "confirmed") return;
+    order.orderStatus = "confirmed";
+    order.paymentStatus = "vendor-confirmed";
+    order.confirmedAt = new Date().toISOString();
+    order.confirmedBy = currentUser()?.email || "";
+    localStorage.setItem(ORDERS_KEY, JSON.stringify(orders));
+    renderVendorOrders(stallId);
+    document.getElementById("vendor-order-alert").textContent =
+      `Confirmed ${peso(Number(order.total))} order. Payment marked vendor-confirmed in this demo only.`;
+  } catch (err) {
+    document.getElementById("vendor-order-alert").textContent = `Could not confirm order: ${err.message}`;
+  }
+}
+
+function playVendorOrderAlert() {
+  if (!vendorOrderSoundEnabled || !vendorAudioContext) return;
+  const now = vendorAudioContext.currentTime;
+  [0, 0.22].forEach((offset) => {
+    const oscillator = vendorAudioContext.createOscillator();
+    const gain = vendorAudioContext.createGain();
+    oscillator.type = "sine";
+    oscillator.frequency.value = offset === 0 ? 880 : 1100;
+    gain.gain.setValueAtTime(0.0001, now + offset);
+    gain.gain.exponentialRampToValueAtTime(0.18, now + offset + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + offset + 0.18);
+    oscillator.connect(gain);
+    gain.connect(vendorAudioContext.destination);
+    oscillator.start(now + offset);
+    oscillator.stop(now + offset + 0.2);
+  });
+}
+
+function handleOrdersUpdate(oldValue, newValue) {
+  if (!newValue) return;
+  const user = currentUser();
+  try {
+    const oldOrders = oldValue ? JSON.parse(oldValue) : [];
+    const newOrders = JSON.parse(newValue);
+    if (!Array.isArray(oldOrders) || !Array.isArray(newOrders)) return;
+    if (user && user.role === "vendor" && !$vendorPanel.hidden) {
+      const previousIds = new Set(oldOrders.filter(Boolean).map((order) => order.id));
+      const newVendorOrders = newOrders.filter((order) =>
+        order && Number(order.stallId) === Number(user.stallId) &&
+        order.orderStatus !== "confirmed" && !previousIds.has(order.id));
+      renderVendorOrders(user.stallId);
+      if (newVendorOrders.length) {
+        const pending = newOrders.filter((order) =>
+          order && Number(order.stallId) === Number(user.stallId) && order.orderStatus !== "confirmed");
+        document.getElementById("vendor-order-alert").textContent =
+          `New order received! ${pending.length} ${pending.length === 1 ? "order is" : "orders are"} waiting for confirmation.`;
+        playVendorOrderAlert();
+      }
+    }
+    if (activeCustomerOrderId) {
+      const order = newOrders.find((entry) => entry && entry.id === activeCustomerOrderId);
+      if (order) {
+        document.getElementById("order-vendor-status").textContent = order.orderStatus === "confirmed"
+          ? "Vendor confirmed your order and marked payment as received in this demo."
+          : "Waiting for the vendor to confirm your order/payment.";
+      }
+    }
+  } catch (err) {
+    if (user && user.role === "vendor" && !$vendorPanel.hidden) {
+      document.getElementById("vendor-order-alert").textContent = `Could not refresh orders: ${err.message}`;
+    }
+  }
+}
+
+let lastOrdersSnapshot = localStorage.getItem(ORDERS_KEY);
+
+window.addEventListener("storage", (event) => {
+  if (event.key !== ORDERS_KEY) return;
+  lastOrdersSnapshot = event.newValue;
+  handleOrdersUpdate(event.oldValue, event.newValue);
+});
+
+window.setInterval(() => {
+  try {
+    const currentSnapshot = localStorage.getItem(ORDERS_KEY);
+    if (currentSnapshot === lastOrdersSnapshot) return;
+    const previousSnapshot = lastOrdersSnapshot;
+    lastOrdersSnapshot = currentSnapshot;
+    handleOrdersUpdate(previousSnapshot, currentSnapshot);
+  } catch (err) {
+    const user = currentUser();
+    if (user && user.role === "vendor" && !$vendorPanel.hidden) {
+      document.getElementById("vendor-order-alert").textContent = `Could not refresh orders: ${err.message}`;
+    }
+  }
+}, 1200);
+
+function openVendorPanel() {
+  const user = currentUser();
+  const stall = user && user.role === "vendor"
+    ? STALLS.find((entry) => entry.id === Number(user.stallId))
+    : null;
+  if (!stall) {
+    clearSession();
+    renderAccount();
+    showAuth("vendor");
+    authError("This vendor account is not linked to a valid stall. Please log in again or contact the site administrator.");
+    return;
+  }
+  try {
+    document.getElementById("vendor-stall-name").textContent = stall.name;
+    renderVendorOrders(stall.id);
+  } catch (err) {
+    $home.hidden = true;
+    $results.hidden = true;
+    $adminPanel.hidden = true;
+    $vendorPanel.hidden = true;
+    $auth.hidden = false;
+    setAuthMode("vendor");
+    authError(`Could not load vendor orders: ${err.message}`);
+    return;
+  }
+  $home.hidden = true;
+  $results.hidden = true;
+  $auth.hidden = true;
+  $adminPanel.hidden = true;
+  $vendorPanel.hidden = false;
+}
+
+function enterSignedInUser(user, email) {
+  saveSession({
+    name: user.name,
+    email,
+    role: user.role || "customer",
+    stallId: user.stallId,
+  });
+  renderAccount();
+  if (user.role === "vendor") openVendorPanel();
+  else leaveAuth();
+}
+
 $loginForm.addEventListener("submit", async (e) => {
   e.preventDefault();
   try {
@@ -599,10 +996,13 @@ $loginForm.addEventListener("submit", async (e) => {
     const ok = user && (await hashPassword(password, user.salt)) === user.hash;
     if (!ok) return authError("Incorrect email or password.");
 
-    localStorage.setItem(SESSION_KEY, JSON.stringify({ name: user.name, email }));
+    if (user.role === "vendor") {
+      if (!Number.isInteger(Number(user.stallId)) || !STALLS.some((stall) => stall.id === Number(user.stallId))) {
+        return authError("This vendor account is not linked to a valid stall.");
+      }
+    }
     $loginForm.reset();
-    renderAccount();
-    leaveAuth();
+    enterSignedInUser(user, email);
   } catch (err) {
     authError(err.message);
   }
@@ -616,33 +1016,173 @@ $signupForm.addEventListener("submit", async (e) => {
     const password = document.getElementById("signup-password").value;
 
     const users = getUsers();
+    if (email === ADMIN_EMAIL || email === DEMO_VENDOR_EMAIL) return authError("That email is reserved.");
     if (users[email]) return authError("That email already has an account. Try logging in.");
 
     const salt = randomSalt();
-    users[email] = { name, salt, hash: await hashPassword(password, salt) };
+    users[email] = { name, role: "customer", salt, hash: await hashPassword(password, salt), createdAt: new Date().toISOString() };
     saveUsers(users);
 
-    localStorage.setItem(SESSION_KEY, JSON.stringify({ name, email }));
     $signupForm.reset();
-    renderAccount();
-    leaveAuth();
+    enterSignedInUser(users[email], email);
   } catch (err) {
     authError(err.message);
   }
 });
 
+$vendorLoginForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  try {
+    const email = document.getElementById("vendor-login-email").value.trim().toLowerCase();
+    const password = document.getElementById("vendor-login-password").value;
+    const user = getUsers()[email];
+    const ok = user && user.role === "vendor" && (await hashPassword(password, user.salt)) === user.hash;
+    if (!ok) return authError("Incorrect vendor email or password.");
+    if (!STALLS.some((stall) => stall.id === Number(user.stallId))) {
+      return authError("This vendor account is not linked to a valid stall.");
+    }
+    $vendorLoginForm.reset();
+    enterSignedInUser(user, email);
+  } catch (err) {
+    authError(err.message);
+  }
+});
+
+$vendorSignupForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  try {
+    const name = document.getElementById("vendor-signup-name").value.trim();
+    const email = document.getElementById("vendor-signup-email").value.trim().toLowerCase();
+    const password = document.getElementById("vendor-signup-password").value;
+    const stallId = Number(document.getElementById("vendor-signup-stall").value);
+    const users = getUsers();
+    if (email === ADMIN_EMAIL || email === DEMO_VENDOR_EMAIL) return authError("That email is reserved.");
+    if (users[email]) return authError("That email already has an account. Try logging in.");
+    if (!STALLS.some((stall) => stall.id === stallId)) return authError("Choose a valid stall.");
+
+    const salt = randomSalt();
+    users[email] = {
+      name,
+      role: "vendor",
+      stallId,
+      salt,
+      hash: await hashPassword(password, salt),
+      createdAt: new Date().toISOString(),
+    };
+    saveUsers(users);
+    $vendorSignupForm.reset();
+    enterSignedInUser(users[email], email);
+  } catch (err) {
+    authError(err.message);
+  }
+});
+
+$adminLoginForm.addEventListener("submit", (e) => {
+  e.preventDefault();
+  const email = document.getElementById("admin-email").value.trim().toLowerCase();
+  const password = document.getElementById("admin-password").value;
+  if (email !== ADMIN_EMAIL || password !== ADMIN_PASSWORD) {
+    return authError("Incorrect admin email or password.");
+  }
+
+  saveSession({ name: "Administrator", email, role: "admin" });
+  $adminLoginForm.reset();
+  renderAccount();
+  openAdminPanel();
+});
+
+document.getElementById("admin-back").addEventListener("click", () => {
+  $adminPanel.hidden = true;
+  $home.hidden = false;
+  renderAccount();
+});
+
+document.getElementById("admin-logout").addEventListener("click", () => {
+  clearSession();
+  $adminPanel.hidden = true;
+  showAuth("login");
+  renderAccount();
+});
+
+document.getElementById("vendor-back").addEventListener("click", () => {
+  $vendorPanel.hidden = true;
+  $home.hidden = false;
+});
+
+document.getElementById("vendor-logout").addEventListener("click", () => {
+  clearSession();
+  $vendorPanel.hidden = true;
+  renderAccount();
+  showAuth("vendor");
+});
+
+document.getElementById("vendor-sound-toggle").addEventListener("click", async (event) => {
+  const button = event.currentTarget;
+  try {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) throw new Error("Order sounds are not supported in this browser.");
+    if (!vendorAudioContext) vendorAudioContext = new AudioContextClass();
+    if (vendorAudioContext.state === "suspended") await vendorAudioContext.resume();
+    vendorOrderSoundEnabled = !vendorOrderSoundEnabled;
+    button.setAttribute("aria-pressed", String(vendorOrderSoundEnabled));
+    button.textContent = vendorOrderSoundEnabled ? "Order sound on" : "Enable order sound";
+    document.getElementById("vendor-order-alert").textContent = vendorOrderSoundEnabled
+      ? "Order sound enabled. Keep this vendor dashboard open for new-order alerts."
+      : "Order sound disabled.";
+    if (vendorOrderSoundEnabled) playVendorOrderAlert();
+  } catch (err) {
+    document.getElementById("vendor-order-alert").textContent = err.message;
+  }
+});
+
 document.getElementById("tab-login").addEventListener("click", () => setAuthMode("login"));
 document.getElementById("tab-signup").addEventListener("click", () => setAuthMode("signup"));
+document.getElementById("tab-vendor").addEventListener("click", () => setAuthMode("vendor"));
+document.getElementById("tab-admin").addEventListener("click", () => setAuthMode("admin"));
+document.getElementById("vendor-show-signup").addEventListener("click", () => {
+  $vendorLoginForm.hidden = true;
+  $vendorSignupForm.hidden = false;
+  $vendorSignupForm.querySelector("input").focus();
+  $authMsg.textContent = "";
+});
+document.getElementById("vendor-show-login").addEventListener("click", () => {
+  $vendorSignupForm.hidden = true;
+  $vendorLoginForm.hidden = false;
+  $vendorLoginForm.querySelector("input").focus();
+  $authMsg.textContent = "";
+});
+
+const $vendorStallSelect = document.getElementById("vendor-signup-stall");
+STALLS.forEach((stall) => {
+  const option = document.createElement("option");
+  option.value = String(stall.id);
+  option.textContent = stall.name;
+  $vendorStallSelect.appendChild(option);
+});
 
 // ---------- Start ----------
-renderHome();
-renderAccount();
-renderCart();
-if (currentUser()) {
+async function startApp() {
+  renderHome();
+  renderAccount();
+  renderCart();
+  try {
+    await ensureDemoVendorData();
+  } catch (err) {
+    authError(`Demo vendor data could not be initialized: ${err.message}`);
+  }
+  const startupUser = currentUser();
+  if (startupUser && startupUser.role === "admin") {
+    openAdminPanel();
+  } else if (startupUser && startupUser.role === "vendor") {
+    openVendorPanel();
+  } else if (startupUser) {
   $home.hidden = false;
   $craveInput.focus();
-} else {
-  $auth.hidden = false;
-  setAuthMode("login");
-  document.getElementById("login-email").focus();
+  } else {
+    $auth.hidden = false;
+    setAuthMode("login");
+    document.getElementById("login-email").focus();
+  }
 }
+
+startApp();
