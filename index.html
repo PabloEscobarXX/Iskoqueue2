@@ -340,6 +340,34 @@
     </main>
   </div>
 
+  <main class="profile-page" id="profile-page" hidden>
+    <header class="profile-header">
+      <p class="section-kicker">YOUR ISKOQUEUE ACCOUNT</p>
+      <h1>Profile</h1>
+      <p class="profile-intro">Manage your orders, payment preference, and account details.</p>
+    </header>
+    <section class="profile-card" aria-labelledby="profile-account-title">
+      <h2 id="profile-account-title">Account details</h2>
+      <p class="profile-account-name" id="profile-name"></p>
+      <p class="profile-account-email" id="profile-email"></p>
+    </section>
+    <section class="profile-card" aria-labelledby="profile-payments-title">
+      <h2 id="profile-payments-title">Payment methods</h2>
+      <p class="profile-note">Choose a preferred method for checkout. This demo does not connect to or verify e-wallet accounts.</p>
+      <div id="profile-payment-methods"></div>
+      <p class="profile-feedback" id="profile-payment-feedback" role="status"></p>
+    </section>
+    <section class="profile-card" aria-labelledby="profile-orders-title">
+      <h2 id="profile-orders-title">Order history</h2>
+      <div id="profile-orders"></div>
+    </section>
+    <section class="profile-card profile-settings" aria-labelledby="profile-settings-title">
+      <h2 id="profile-settings-title">Settings</h2>
+      <p>Your account and order data are stored in this browser for this demo.</p>
+      <button class="profile-logout" type="button" id="profile-logout">Log out</button>
+    </section>
+  </main>
+
   <div class="cart-dock" id="cart-dock">
     <button class="cart-toggle" type="button" id="cart-toggle" aria-expanded="false" aria-controls="cart-panel">
       <span class="cart-icon" aria-hidden="true">🛒</span>
@@ -395,6 +423,14 @@
       </div>
     </section>
   </div>
+
+  <nav class="bottom-nav" id="bottom-nav" aria-label="Main navigation" hidden>
+    <button type="button" data-nav="home" aria-pressed="false"><span aria-hidden="true">⌂</span><span>Home</span></button>
+    <button type="button" data-nav="search" aria-pressed="false"><span aria-hidden="true">⌕</span><span>Search</span></button>
+    <button type="button" data-nav="map" aria-pressed="false"><span aria-hidden="true">⌖</span><span>Map</span></button>
+    <button type="button" data-nav="cart" aria-pressed="false"><span class="nav-cart-icon" aria-hidden="true">🛒</span><span>Cart</span><span class="nav-cart-count" id="nav-cart-count">0</span></button>
+    <button type="button" data-nav="profile" aria-pressed="false"><span aria-hidden="true">●</span><span>Profile</span></button>
+  </nav>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="data.js"></script>
