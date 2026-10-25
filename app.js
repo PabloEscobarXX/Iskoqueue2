@@ -11,6 +11,8 @@ const $listView = document.getElementById("list-view");
 const $detailView = document.getElementById("detail-view");
 const $home = document.getElementById("home");
 const $results = document.getElementById("results");
+const $profilePage = document.getElementById("profile-page");
+const $bottomNav = document.getElementById("bottom-nav");
 const $craveForm = document.getElementById("crave-form");
 const $craveInput = document.getElementById("crave-input");
 const $suggest = document.getElementById("suggest");
@@ -251,20 +253,24 @@ function showResults({ q = "", cat = "All" } = {}) {
   $home.hidden = true;
   $auth.hidden = true;
   $results.hidden = false;
+  $profilePage.hidden = true;
   $detailView.hidden = true;
   $listView.hidden = false;
 
   map.invalidateSize(); // the map was hidden, so tell Leaflet its real size
   renderChips();
   renderList();
+  updateCustomerChrome("search");
   window.scrollTo(0, 0);
 }
 
 function showHome() {
   $results.hidden = true;
   $auth.hidden = true;
+  $profilePage.hidden = true;
   $home.hidden = false;
   $craveInput.value = "";
+  updateCustomerChrome("home");
   $craveInput.focus();
 }
 
@@ -278,6 +284,7 @@ document.getElementById("brand").addEventListener("click", showHome);
 
 // ---------- Demo cart ----------
 const $cartToggle = document.getElementById("cart-toggle");
+const $cartDock = document.getElementById("cart-dock");
 const $cartPanel = document.getElementById("cart-panel");
 const $cartItems = document.getElementById("cart-items");
 const $cartEmpty = document.getElementById("cart-empty");
@@ -321,6 +328,7 @@ function renderCart() {
   const quantity = items.reduce((sum, item) => sum + item.quantity, 0);
   const total = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
   $cartCount.textContent = String(quantity);
+  document.getElementById("nav-cart-count").textContent = String(quantity);
   $cartTotal.textContent = peso(total);
   $cartItems.innerHTML = "";
   $cartEmpty.hidden = items.length > 0;
@@ -350,6 +358,80 @@ function renderCart() {
   });
 }
 
+function setActiveNav(name) {
+  $bottomNav.querySelectorAll("[data-nav]").forEach((button) => {
+    button.setAttribute("aria-pressed", String(button.dataset.nav === name));
+  });
+}
+
+function updateCustomerChrome(activeNav = "") {
+  const user = currentUser();
+  const customerPageVisible = !$home.hidden || !$results.hidden || !$profilePage.hidden;
+  const enabled = customerPageVisible && (!user || user.role === "customer");
+  $bottomNav.hidden = !enabled;
+  $cartDock.hidden = !enabled;
+  document.body.classList.toggle("has-bottom-nav", enabled);
+  if (!enabled) {
+    $cartPanel.hidden = true;
+    $cartToggle.setAttribute("aria-expanded", "false");
+    return;
+  }
+  if (activeNav) {
+    if (activeNav !== "cart") {
+      $cartPanel.hidden = true;
+      $cartToggle.setAttribute("aria-expanded", "false");
+    }
+    setActiveNav(activeNav);
+  }
+}
+
+function showProfile() {
+  const user = currentUser();
+  if (!user || user.role !== "customer") {
+    showAuth("login");
+    viewBeforeAuth = "profile";
+    return;
+  }
+  $home.hidden = true;
+  $results.hidden = true;
+  $auth.hidden = true;
+  $profilePage.hidden = false;
+  renderProfile();
+  updateCustomerChrome("profile");
+  window.scrollTo(0, 0);
+}
+
+$bottomNav.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-nav]");
+  if (!button) return;
+  switch (button.dataset.nav) {
+    case "home":
+      showHome();
+      break;
+    case "search":
+      showResults();
+      setActiveNav("search");
+      $search.focus();
+      break;
+    case "map":
+      showResults();
+      setActiveNav("map");
+      map.invalidateSize();
+      document.getElementById("map").scrollIntoView({ behavior: "smooth", block: "start" });
+      break;
+    case "cart": {
+      const willOpen = $cartPanel.hidden;
+      $cartPanel.hidden = !willOpen;
+      $cartToggle.setAttribute("aria-expanded", String(willOpen));
+      setActiveNav(willOpen ? "cart" : "");
+      break;
+    }
+    case "profile":
+      showProfile();
+      break;
+  }
+});
+
 $cartToggle.addEventListener("click", () => {
   const willOpen = $cartPanel.hidden;
   $cartPanel.hidden = !willOpen;
@@ -358,6 +440,7 @@ $cartToggle.addEventListener("click", () => {
 document.getElementById("cart-close").addEventListener("click", () => {
   $cartPanel.hidden = true;
   $cartToggle.setAttribute("aria-expanded", "false");
+  setActiveNav("");
 });
 $cartCheckout.addEventListener("click", () => {
   const quantity = [...cart.values()].reduce((sum, item) => sum + item.quantity, 0);
@@ -431,6 +514,14 @@ document.getElementById("review-order").addEventListener("click", () => {
   $reviewStep.hidden = false;
   document.getElementById("checkout-step-label").textContent = "2 of 2 · Review & payment";
   document.getElementById("checkout-back").hidden = false;
+  const preferredPayment = preferredPaymentForCurrentUser();
+  if (preferredPayment) {
+    const preferredRadio = document.querySelector(`input[name="payment-method"][value="${preferredPayment}"]`);
+    if (preferredRadio) {
+      preferredRadio.checked = true;
+      preferredRadio.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+  }
 });
 
 document.getElementById("checkout-back").addEventListener("click", () => {
@@ -487,6 +578,7 @@ $placeOrder.addEventListener("click", () => {
     orders.push({
       id: createOrderId(),
       stallId,
+      customerEmail: currentUser()?.email || "",
       createdAt: new Date().toISOString(),
       total: orderTotal,
       itemSummary: items.map((item) => `${item.quantity} × ${item.name}`).join(", "),
@@ -515,6 +607,7 @@ document.getElementById("new-order").addEventListener("click", () => {
   $cartContent.hidden = false;
   $cartPanel.hidden = true;
   $cartToggle.setAttribute("aria-expanded", "false");
+  setActiveNav("");
 });
 
 // ---------- Accounts ----------
@@ -557,6 +650,104 @@ function saveSession(session) {
 
 function clearSession() {
   sessionStorage.removeItem(SESSION_KEY);
+}
+
+function preferredPaymentForCurrentUser() {
+  const user = currentUser();
+  const savedUser = user && getUsers()[user.email];
+  if (!savedUser || !["gcash", "maya"].includes(savedUser.preferredPayment)) return "";
+  return savedUser.preferredPayment;
+}
+
+function renderProfile() {
+  const user = currentUser();
+  if (!user || user.role !== "customer") return;
+  document.getElementById("profile-name").textContent = user.name || "Customer";
+  document.getElementById("profile-email").textContent = user.email || "";
+
+  const preferredPayment = preferredPaymentForCurrentUser();
+  const paymentList = document.getElementById("profile-payment-methods");
+  paymentList.replaceChildren();
+  [
+    { id: "gcash", label: "GCash" },
+    { id: "maya", label: "Maya" },
+  ].forEach((method) => {
+    const row = document.createElement("div");
+    row.className = "profile-payment-row";
+    const description = document.createElement("div");
+    const name = document.createElement("strong");
+    name.textContent = method.label;
+    const status = document.createElement("span");
+    status.className = "profile-payment-status";
+    status.textContent = preferredPayment === method.id
+      ? "Preferred · not connected"
+      : "Not connected";
+    description.append(name, status);
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "profile-payment-button";
+    button.textContent = preferredPayment === method.id ? "Preferred" : "Set preferred";
+    button.disabled = preferredPayment === method.id;
+    button.addEventListener("click", () => {
+      const users = getUsers();
+      const savedUser = users[user.email];
+      if (!savedUser || savedUser.role !== "customer") {
+        document.getElementById("profile-payment-feedback").textContent =
+          "Could not save your preference. Please log in again.";
+        return;
+      }
+      savedUser.preferredPayment = method.id;
+      try {
+        saveUsers(users);
+        document.getElementById("profile-payment-feedback").textContent =
+          `${method.label} saved as your preferred checkout method. No e-wallet was connected.`;
+        renderProfile();
+      } catch (err) {
+        document.getElementById("profile-payment-feedback").textContent =
+          `Could not save your preference: ${err.message}`;
+      }
+    });
+    row.append(description, button);
+    paymentList.appendChild(row);
+  });
+
+  const orderList = document.getElementById("profile-orders");
+  orderList.replaceChildren();
+  const orderStatus = document.createElement("p");
+  orderStatus.className = "profile-note";
+  try {
+    const storedOrders = localStorage.getItem(ORDERS_KEY);
+    const orders = storedOrders ? JSON.parse(storedOrders) : [];
+    if (!Array.isArray(orders)) throw new Error("Saved order data is invalid.");
+    const customerOrders = orders
+      .filter((order) => order && order.customerEmail === user.email)
+      .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
+    if (!customerOrders.length) {
+      orderStatus.textContent = "No orders linked to this account yet. New orders will appear here.";
+      orderList.appendChild(orderStatus);
+      return;
+    }
+    customerOrders.forEach((order) => {
+      const card = document.createElement("article");
+      card.className = "profile-order";
+      const stall = STALLS.find((entry) => entry.id === Number(order.stallId));
+      const heading = document.createElement("h3");
+      heading.textContent = stall ? stall.name : "Food stall";
+      const details = document.createElement("p");
+      details.textContent = String(order.itemSummary || "Items unavailable");
+      const date = new Date(order.createdAt);
+      const meta = document.createElement("p");
+      const dateLabel = !Number.isNaN(date.getTime()) ? date.toLocaleString() : "Date unavailable";
+      const payment = order.payment === "gcash" ? "GCash" : order.payment === "maya" ? "Maya" : "Unspecified";
+      const status = order.orderStatus === "confirmed" ? "Confirmed" : "Awaiting confirmation";
+      meta.textContent = `${dateLabel} · ${peso(Number(order.total) || 0)} · ${payment} · ${status}`;
+      card.append(heading, details, meta);
+      orderList.appendChild(card);
+    });
+  } catch (err) {
+    orderStatus.textContent = `Order history could not be loaded: ${err.message}`;
+    orderList.appendChild(orderStatus);
+  }
 }
 
 async function hashPassword(password, salt) {
@@ -669,11 +860,13 @@ function renderAccount() {
       out.textContent = "Log out";
       out.addEventListener("click", () => {
         clearSession();
-        if (user.role === "admin") {
+        if (user.role === "admin" || user.role === "vendor") {
           $adminPanel.hidden = true;
+          $vendorPanel.hidden = true;
           $home.hidden = false;
         }
         renderAccount();
+        showHome();
       });
       box.append(who, out);
     } else {
@@ -721,8 +914,10 @@ function showAuth(mode = "login") {
   viewBeforeAuth = $results.hidden ? "home" : "results";
   $home.hidden = true;
   $results.hidden = true;
+  $profilePage.hidden = true;
   $auth.hidden = false;
   setAuthMode(mode);
+  updateCustomerChrome();
   const form = mode === "login" ? $loginForm : mode === "signup" ? $signupForm : mode === "admin" ? $adminLoginForm : $vendorLoginForm;
   form.querySelector("input").focus();
 }
@@ -731,9 +926,20 @@ function leaveAuth() {
   $auth.hidden = true;
   if (viewBeforeAuth === "results") {
     $results.hidden = false;
+    $profilePage.hidden = true;
     map.invalidateSize();
+    updateCustomerChrome("search");
+  } else if (viewBeforeAuth === "profile") {
+    $home.hidden = true;
+    $results.hidden = true;
+    $profilePage.hidden = false;
+    renderProfile();
+    updateCustomerChrome("profile");
   } else {
+    $results.hidden = true;
+    $profilePage.hidden = true;
     $home.hidden = false;
+    updateCustomerChrome("home");
   }
 }
 
@@ -771,7 +977,9 @@ function openAdminPanel() {
   $home.hidden = true;
   $results.hidden = true;
   $auth.hidden = true;
+  $profilePage.hidden = true;
   $adminPanel.hidden = false;
+  updateCustomerChrome();
 }
 
 function renderVendorOrders(stallId) {
@@ -913,6 +1121,7 @@ function handleOrdersUpdate(oldValue, newValue) {
           : "Waiting for the vendor to confirm your order/payment.";
       }
     }
+    if (user && user.role === "customer" && !$profilePage.hidden) renderProfile();
   } catch (err) {
     if (user && user.role === "vendor" && !$vendorPanel.hidden) {
       document.getElementById("vendor-order-alert").textContent = `Could not refresh orders: ${err.message}`;
@@ -971,8 +1180,10 @@ function openVendorPanel() {
   $home.hidden = true;
   $results.hidden = true;
   $auth.hidden = true;
+  $profilePage.hidden = true;
   $adminPanel.hidden = true;
   $vendorPanel.hidden = false;
+  updateCustomerChrome();
 }
 
 function enterSignedInUser(user, email) {
@@ -1093,20 +1304,20 @@ $adminLoginForm.addEventListener("submit", (e) => {
 
 document.getElementById("admin-back").addEventListener("click", () => {
   $adminPanel.hidden = true;
-  $home.hidden = false;
   renderAccount();
+  showHome();
 });
 
 document.getElementById("admin-logout").addEventListener("click", () => {
   clearSession();
   $adminPanel.hidden = true;
-  showAuth("login");
   renderAccount();
+  showAuth("login");
 });
 
 document.getElementById("vendor-back").addEventListener("click", () => {
   $vendorPanel.hidden = true;
-  $home.hidden = false;
+  showHome();
 });
 
 document.getElementById("vendor-logout").addEventListener("click", () => {
@@ -1114,6 +1325,12 @@ document.getElementById("vendor-logout").addEventListener("click", () => {
   $vendorPanel.hidden = true;
   renderAccount();
   showAuth("vendor");
+});
+
+document.getElementById("profile-logout").addEventListener("click", () => {
+  clearSession();
+  renderAccount();
+  showHome();
 });
 
 document.getElementById("vendor-sound-toggle").addEventListener("click", async (event) => {
@@ -1176,10 +1393,12 @@ async function startApp() {
   } else if (startupUser && startupUser.role === "vendor") {
     openVendorPanel();
   } else if (startupUser) {
-  $home.hidden = false;
-  $craveInput.focus();
+    $home.hidden = false;
+    updateCustomerChrome("home");
+    $craveInput.focus();
   } else {
     $auth.hidden = false;
+    updateCustomerChrome();
     setAuthMode("login");
     document.getElementById("login-email").focus();
   }
