@@ -1,10 +1,3 @@
-
-// Sample data. All businesses are made up – replace with your own.
-// Demo stall locations follow the black-marked route around the park and amphitheater.
-// Fine-tune them: right-click the exact spot in Google Maps and click the numbers to copy lat/lng.
-//
-// open/close: 24-hour clock (e.g. 17 = 5:00 PM). If close < open, it closes after midnight.
-
 const STALLS = [
   {
     id: 1,
