@@ -423,6 +423,7 @@ h1, h2, h3 {
 .form-msg { min-height: 1.4em; margin: 12px 0 0; text-align: center; font-size: .92rem; color: var(--closed); }
 .form-msg.ok { color: var(--open); }
 .link-btn.dark { display: block; margin: 8px auto 0; color: var(--accent); }
+.auth-demo-note { margin: 8px 0 0; color: var(--muted); font-size: .85rem; line-height: 1.45; }
 
 @media (prefers-reduced-motion: reduce) {
   .bear-shadow, .bear-dance, .bear-head, .bear-arm-left, .bear-arm-right,
@@ -856,6 +857,7 @@ body.has-bottom-nav { padding-bottom: calc(var(--bottom-nav-height) + env(safe-a
 .profile-order { padding: 12px 0; border-top: 1px solid var(--line); }
 .profile-order h3 { font-size: 1rem; }
 .profile-order p { margin: 4px 0 0; color: var(--muted); font-size: .88rem; }
+.profile-order .profile-order-status { color: var(--accent); font-weight: 700; }
 .profile-settings p { margin-top: 0; }
 .profile-logout { border-color: var(--closed); color: var(--closed); }
 
