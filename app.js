@@ -1,6 +1,7 @@
 // ---------- State ----------
 let activeCategory = "All";
 let query = "";
+let currentDetailStall = null;
 
 // ---------- Elements ----------
 const $cards = document.getElementById("cards");
@@ -52,6 +53,7 @@ function makePin(stall) {
 
 // ---------- Helpers ----------
 function isOpenNow(stall) {
+  if (typeof stall.manualOpen === "boolean") return stall.manualOpen;
   const hour = new Date().getHours() + new Date().getMinutes() / 60;
   // handles places that close after midnight (e.g. open 18, close 4)
   return stall.open < stall.close
@@ -67,6 +69,13 @@ function formatHour(h) {
 }
 
 const peso = (n) => "₱" + n.toLocaleString("en-PH");
+const escapeHTML = (value) => String(value).replace(/[&<>"']/g, (character) => ({
+  "&": "&amp;",
+  "<": "&lt;",
+  ">": "&gt;",
+  '"': "&quot;",
+  "'": "&#39;",
+}[character]));
 
 function matches(stall) {
   const inCategory = activeCategory === "All" || stall.category === activeCategory;
@@ -169,10 +178,17 @@ function showDetail(stall) {
           (m, index) => `
         <li>
           <div>
-            <div class="dish">${m.name}</div>
-            ${m.desc ? `<div class="desc">${m.desc}</div>` : ""}
+            <div class="dish">${escapeHTML(m.name)}</div>
+            ${m.desc ? `<div class="desc">${escapeHTML(m.desc)}</div>` : ""}
           </div>
-          <div class="menu-buy"><div class="price">${peso(m.price)}</div><button class="add-to-cart" type="button" data-item="${index}" aria-label="Add ${m.name} to cart">+</button></div>
+          <div class="menu-buy">
+            <div class="price">${peso(m.price)}</div>
+            <div class="menu-quantity-controls" aria-label="Quantity for ${escapeHTML(m.name)}">
+              <button class="menu-quantity-button menu-quantity-decrease" type="button" data-item="${index}" aria-label="Decrease ${escapeHTML(m.name)} quantity" disabled>−</button>
+              <span class="menu-quantity" data-quantity-for="${index}" aria-live="polite">0</span>
+              <button class="menu-quantity-button menu-quantity-increase add-to-cart" type="button" data-item="${index}" aria-label="Increase ${escapeHTML(m.name)} quantity"${open ? "" : " disabled"}>+</button>
+            </div>
+          </div>
         </li>`
         )
         .join("")}
@@ -182,9 +198,18 @@ function showDetail(stall) {
   $detailView.querySelectorAll(".add-to-cart").forEach((button) => {
     button.addEventListener("click", () => addToCart(stall, stall.menu[Number(button.dataset.item)]));
   });
+  $detailView.querySelectorAll(".menu-quantity-decrease").forEach((button) => {
+    button.addEventListener("click", () => {
+      const item = stall.menu[Number(button.dataset.item)];
+      const current = cart.get(`${stall.id}:${item.name}`)?.quantity || 0;
+      setCartItemQuantity(stall, item, current - 1);
+    });
+  });
 
+  currentDetailStall = stall;
   $listView.hidden = true;
   $detailView.hidden = false;
+  updateMenuQuantities();
   document.getElementById("panel").scrollTop = 0;
 
   // zoom the map to this stall
@@ -192,6 +217,7 @@ function showDetail(stall) {
 }
 
 function showList() {
+  currentDetailStall = null;
   $detailView.hidden = true;
   $listView.hidden = false;
   renderList();
@@ -307,20 +333,62 @@ let vendorAudioContext = null;
 let vendorOrderSoundEnabled = false;
 
 function addToCart(stall, item) {
+  const key = `${stall.id}:${item.name}`;
+  setCartItemQuantity(stall, item, (cart.get(key)?.quantity || 0) + 1);
+}
+
+function setCartItemQuantity(stall, item, quantity) {
+  const key = `${stall.id}:${item.name}`;
+  const existing = cart.get(key);
+  if (quantity <= 0) {
+    cart.delete(key);
+    $cartMessage.textContent = `${item.name} removed from your cart.`;
+    $cartContent.hidden = false;
+    $checkoutFlow.hidden = true;
+    renderCart();
+    return;
+  }
+  if (!Number.isInteger(quantity)) {
+    $cartMessage.textContent = "Enter a whole number quantity of at least 1.";
+    renderCart();
+    return;
+  }
+  if (quantity > (existing?.quantity || 0) && !isOpenNow(stall)) {
+    $cartMessage.textContent = `${stall.name} is closed right now and cannot accept orders.`;
+    $cartPanel.hidden = false;
+    $cartToggle.setAttribute("aria-expanded", "true");
+    renderCart();
+    return;
+  }
   const currentStallId = cart.size ? Number([...cart.keys()][0].split(":")[0]) : null;
-  if (currentStallId !== null && currentStallId !== stall.id) {
+  if (quantity > 0 && currentStallId !== null && currentStallId !== stall.id) {
     $cartMessage.textContent = "Checkout is one stall at a time. Remove the current stall's items before adding from another stall.";
     $cartPanel.hidden = false;
     $cartToggle.setAttribute("aria-expanded", "true");
     return;
   }
-  const key = `${stall.id}:${item.name}`;
-  const existing = cart.get(key);
-  cart.set(key, { key, stallName: stall.name, name: item.name, price: item.price, quantity: (existing?.quantity || 0) + 1 });
-  $cartMessage.textContent = `${item.name} added to your cart.`;
+  cart.set(key, {
+    key,
+    stallName: stall.name,
+    name: item.name,
+    price: item.price,
+    quantity,
+  });
+  $cartMessage.textContent = `${item.name} quantity updated to ${quantity}.`;
   $cartContent.hidden = false;
   $checkoutFlow.hidden = true;
   renderCart();
+}
+
+function updateMenuQuantities() {
+  if (!currentDetailStall || $detailView.hidden) return;
+  currentDetailStall.menu.forEach((item, index) => {
+    const quantity = cart.get(`${currentDetailStall.id}:${item.name}`)?.quantity || 0;
+    const quantityLabel = $detailView.querySelector(`[data-quantity-for="${index}"]`);
+    const decrease = $detailView.querySelector(`.menu-quantity-decrease[data-item="${index}"]`);
+    if (quantityLabel) quantityLabel.textContent = String(quantity);
+    if (decrease) decrease.disabled = quantity === 0;
+  });
 }
 
 function renderCart() {
@@ -338,9 +406,47 @@ function renderCart() {
     li.className = "cart-item";
     const detail = document.createElement("span");
     detail.className = "cart-item-detail";
-    detail.textContent = `${item.quantity} × ${item.name} · ${item.stallName}`;
+    detail.textContent = `${item.name} · ${item.stallName}`;
     const price = document.createElement("strong");
     price.textContent = peso(item.price * item.quantity);
+    const quantityControls = document.createElement("div");
+    quantityControls.className = "cart-quantity-controls";
+    const decrease = document.createElement("button");
+    decrease.type = "button";
+    decrease.className = "cart-quantity-button";
+    decrease.textContent = "−";
+    decrease.setAttribute("aria-label", `Decrease quantity of ${item.name}`);
+    decrease.addEventListener("click", () => {
+      const stall = STALLS.find((entry) => entry.id === Number(item.key.split(":")[0]));
+      if (stall) setCartItemQuantity(stall, stall.menu.find((menuItem) => menuItem.name === item.name), item.quantity - 1);
+    });
+    const quantityInput = document.createElement("input");
+    quantityInput.className = "cart-quantity-input";
+    quantityInput.type = "number";
+    quantityInput.min = "1";
+    quantityInput.step = "1";
+    quantityInput.value = String(item.quantity);
+    quantityInput.setAttribute("aria-label", `Quantity of ${item.name}`);
+    quantityInput.addEventListener("change", () => {
+      const quantity = Number(quantityInput.value);
+      if (!Number.isInteger(quantity) || quantity < 1) {
+        $cartMessage.textContent = "Enter a whole number quantity of at least 1.";
+        renderCart();
+        return;
+      }
+      const stall = STALLS.find((entry) => entry.id === Number(item.key.split(":")[0]));
+      if (stall) setCartItemQuantity(stall, stall.menu.find((menuItem) => menuItem.name === item.name), quantity);
+    });
+    const increase = document.createElement("button");
+    increase.type = "button";
+    increase.className = "cart-quantity-button";
+    increase.textContent = "+";
+    increase.setAttribute("aria-label", `Increase quantity of ${item.name}`);
+    increase.addEventListener("click", () => {
+      const stall = STALLS.find((entry) => entry.id === Number(item.key.split(":")[0]));
+      if (stall) setCartItemQuantity(stall, stall.menu.find((menuItem) => menuItem.name === item.name), item.quantity + 1);
+    });
+    quantityControls.append(decrease, quantityInput, increase);
     const remove = document.createElement("button");
     remove.type = "button";
     remove.className = "cart-remove";
@@ -353,9 +459,10 @@ function renderCart() {
       $checkoutFlow.hidden = true;
       renderCart();
     });
-    li.append(detail, price, remove);
+    li.append(detail, price, quantityControls, remove);
     $cartItems.appendChild(li);
   });
+  updateMenuQuantities();
 }
 
 function setActiveNav(name) {
@@ -570,6 +677,11 @@ $placeOrder.addEventListener("click", () => {
   if (!selectedPayment || !cart.size) return;
   const items = [...cart.values()];
   const stallId = Number(items[0].key.split(":")[0]);
+  const stall = STALLS.find((entry) => entry.id === stallId);
+  if (!stall || !isOpenNow(stall)) {
+    $cartMessage.textContent = `${stall ? stall.name : "This shop"} is closed and cannot accept orders right now.`;
+    return;
+  }
   const orderTotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
   try {
     const savedOrders = localStorage.getItem(ORDERS_KEY);
@@ -617,11 +729,63 @@ document.getElementById("new-order").addEventListener("click", () => {
 const USERS_KEY = "kainan_users";
 const SESSION_KEY = "kainan_session";
 const ORDERS_KEY = "kainan_demo_orders";
+const VENDOR_MENUS_KEY = "kainan_vendor_menus";
+const VENDOR_SHOP_STATUS_KEY = "kainan_vendor_shop_status";
 const ADMIN_EMAIL = "admin@iskoqueue.local";
 const ADMIN_PASSWORD = "AdminDemo2026!";
 const DEMO_VENDOR_EMAIL = "demo.vendor@iskoqueue.local";
 const DEMO_VENDOR_PASSWORD = "VendorDemo2026!";
 const DEMO_VENDOR_STALL_ID = 1;
+const ORIGINAL_STALL_MENUS = new Map(STALLS.map((stall) => [
+  stall.id,
+  stall.menu.map((item) => ({ ...item })),
+]));
+let vendorMenus = {};
+let vendorShopStatus = {};
+let vendorSettingsLoaded = false;
+
+function readVendorSettingsObject(key) {
+  const saved = localStorage.getItem(key);
+  if (!saved) return {};
+  const parsed = JSON.parse(saved);
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("Saved vendor settings are invalid.");
+  }
+  return parsed;
+}
+
+function loadVendorSettings() {
+  const savedMenus = readVendorSettingsObject(VENDOR_MENUS_KEY);
+  const savedStatuses = readVendorSettingsObject(VENDOR_SHOP_STATUS_KEY);
+  const nextMenus = {};
+  const nextStatuses = {};
+  Object.entries(savedMenus).forEach(([stallId, menu]) => {
+    if (!Array.isArray(menu) || !menu.length || menu.some((item) =>
+      !item || typeof item.name !== "string" || !item.name.trim() ||
+      typeof item.desc !== "string" || !Number.isFinite(item.price) || item.price < 0
+    )) {
+      throw new Error("Saved vendor menu is invalid.");
+    }
+    nextMenus[stallId] = menu.map((item) => ({
+      name: item.name.trim(),
+      desc: item.desc.trim(),
+      price: item.price,
+    }));
+  });
+  Object.entries(savedStatuses).forEach(([stallId, isOpen]) => {
+    if (typeof isOpen !== "boolean") throw new Error("Saved shop status is invalid.");
+    nextStatuses[stallId] = isOpen;
+  });
+  vendorMenus = nextMenus;
+  vendorShopStatus = nextStatuses;
+  STALLS.forEach((stall) => {
+    stall.menu = (vendorMenus[stall.id] || ORIGINAL_STALL_MENUS.get(stall.id)).map((item) => ({ ...item }));
+    stall.manualOpen = Object.prototype.hasOwnProperty.call(vendorShopStatus, stall.id)
+      ? vendorShopStatus[stall.id]
+      : undefined;
+  });
+  vendorSettingsLoaded = true;
+}
 
 function getUsers() {
   try { return JSON.parse(localStorage.getItem(USERS_KEY)) || {}; } catch { return {}; }
@@ -1137,6 +1301,27 @@ window.addEventListener("storage", (event) => {
   handleOrdersUpdate(event.oldValue, event.newValue);
 });
 
+window.addEventListener("storage", (event) => {
+  if (event.key !== VENDOR_MENUS_KEY && event.key !== VENDOR_SHOP_STATUS_KEY) return;
+  try {
+    loadVendorSettings();
+    const user = currentUser();
+    const stall = user && user.role === "vendor"
+      ? STALLS.find((entry) => entry.id === Number(user.stallId))
+      : null;
+    if (stall && !$vendorPanel.hidden) renderVendorMenu(stall);
+    if (!$results.hidden) {
+      if ($detailView.hidden) renderList();
+      else {
+        const detailStall = STALLS.find((entry) => entry.name === $detailView.querySelector("h2")?.textContent);
+        if (detailStall) showDetail(detailStall);
+      }
+    }
+  } catch (err) {
+    document.getElementById("vendor-menu-feedback").textContent = `Could not refresh vendor settings: ${err.message}`;
+  }
+});
+
 window.setInterval(() => {
   try {
     const currentSnapshot = localStorage.getItem(ORDERS_KEY);
@@ -1152,6 +1337,98 @@ window.setInterval(() => {
   }
 }, 1200);
 
+function addVendorMenuRow(item = { name: "", desc: "", price: "" }) {
+  const container = document.getElementById("vendor-menu-items");
+  const row = document.createElement("div");
+  row.className = "vendor-menu-row";
+
+  const fields = [
+    { label: "Item name", name: "name", type: "text", value: item.name, required: true },
+    { label: "Description", name: "desc", type: "text", value: item.desc },
+    { label: "Price (₱)", name: "price", type: "number", value: item.price, required: true, min: "0", step: "0.01" },
+  ];
+  fields.forEach((field) => {
+    const label = document.createElement("label");
+    label.textContent = field.label;
+    const input = document.createElement("input");
+    input.type = field.type;
+    input.name = field.name;
+    input.value = String(field.value);
+    input.required = Boolean(field.required);
+    input.setAttribute("aria-label", field.label);
+    if (field.min !== undefined) input.min = field.min;
+    if (field.step !== undefined) input.step = field.step;
+    label.appendChild(input);
+    row.appendChild(label);
+  });
+
+  const remove = document.createElement("button");
+  remove.type = "button";
+  remove.className = "vendor-menu-remove";
+  remove.textContent = "Remove";
+  remove.addEventListener("click", () => {
+    row.remove();
+    const rows = [...container.querySelectorAll(".vendor-menu-row")];
+    rows.forEach((menuRow) => {
+      menuRow.querySelector(".vendor-menu-remove").disabled = rows.length === 1;
+    });
+  });
+  row.appendChild(remove);
+  container.appendChild(row);
+  const rows = [...container.querySelectorAll(".vendor-menu-row")];
+  rows.forEach((menuRow) => {
+    menuRow.querySelector(".vendor-menu-remove").disabled = rows.length === 1;
+  });
+}
+
+function renderVendorMenu(stall) {
+  const statusText = document.getElementById("vendor-shop-status");
+  const toggleButton = document.getElementById("vendor-shop-toggle");
+  const open = isOpenNow(stall);
+  statusText.textContent = open ? "Your shop is open and can accept orders." : "Your shop is closed and cannot accept orders.";
+  statusText.classList.toggle("is-closed", !open);
+  toggleButton.textContent = open ? "Close shop" : "Open shop";
+  toggleButton.setAttribute("aria-label", open ? "Close shop" : "Open shop");
+
+  const container = document.getElementById("vendor-menu-items");
+  container.replaceChildren();
+  stall.menu.forEach((item) => addVendorMenuRow(item));
+  document.getElementById("vendor-menu-feedback").textContent = "";
+}
+
+function saveVendorMenu(stall) {
+  const rows = [...document.querySelectorAll("#vendor-menu-items .vendor-menu-row")];
+  const menu = rows.map((row) => ({
+    name: row.querySelector('[name="name"]').value.trim(),
+    desc: row.querySelector('[name="desc"]').value.trim(),
+    price: Number(row.querySelector('[name="price"]').value),
+  }));
+  if (!menu.length || menu.some((item) => !item.name || !Number.isFinite(item.price) || item.price < 0)) {
+    throw new Error("Add at least one menu item with a valid name and price.");
+  }
+  const nextMenus = { ...readVendorSettingsObject(VENDOR_MENUS_KEY), [stall.id]: menu };
+  localStorage.setItem(VENDOR_MENUS_KEY, JSON.stringify(nextMenus));
+  vendorMenus = nextMenus;
+  stall.menu = menu.map((item) => ({ ...item }));
+  document.getElementById("vendor-menu-feedback").textContent = "Menu and prices saved.";
+  if (!$results.hidden) {
+    if ($detailView.hidden) renderList();
+    else showDetail(stall);
+  }
+}
+
+function setVendorShopStatus(stall, isOpen) {
+  const nextStatuses = { ...readVendorSettingsObject(VENDOR_SHOP_STATUS_KEY), [stall.id]: isOpen };
+  localStorage.setItem(VENDOR_SHOP_STATUS_KEY, JSON.stringify(nextStatuses));
+  vendorShopStatus = nextStatuses;
+  stall.manualOpen = isOpen;
+  renderVendorMenu(stall);
+  if (!$results.hidden) {
+    if ($detailView.hidden) renderList();
+    else showDetail(stall);
+  }
+}
+
 function openVendorPanel() {
   const user = currentUser();
   const stall = user && user.role === "vendor"
@@ -1165,7 +1442,9 @@ function openVendorPanel() {
     return;
   }
   try {
+    if (!vendorSettingsLoaded) loadVendorSettings();
     document.getElementById("vendor-stall-name").textContent = stall.name;
+    renderVendorMenu(stall);
     renderVendorOrders(stall.id);
   } catch (err) {
     $home.hidden = true;
@@ -1352,6 +1631,35 @@ document.getElementById("vendor-sound-toggle").addEventListener("click", async (
   }
 });
 
+document.getElementById("vendor-shop-toggle").addEventListener("click", () => {
+  const user = currentUser();
+  const stall = user && user.role === "vendor"
+    ? STALLS.find((entry) => entry.id === Number(user.stallId))
+    : null;
+  if (!stall) return;
+  try {
+    setVendorShopStatus(stall, !isOpenNow(stall));
+  } catch (err) {
+    document.getElementById("vendor-shop-status").textContent = `Could not update shop status: ${err.message}`;
+  }
+});
+
+document.getElementById("vendor-menu-add").addEventListener("click", () => addVendorMenuRow());
+
+document.getElementById("vendor-menu-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const user = currentUser();
+  const stall = user && user.role === "vendor"
+    ? STALLS.find((entry) => entry.id === Number(user.stallId))
+    : null;
+  if (!stall) return;
+  try {
+    saveVendorMenu(stall);
+  } catch (err) {
+    document.getElementById("vendor-menu-feedback").textContent = `Could not save menu: ${err.message}`;
+  }
+});
+
 document.getElementById("tab-login").addEventListener("click", () => setAuthMode("login"));
 document.getElementById("tab-signup").addEventListener("click", () => setAuthMode("signup"));
 document.getElementById("tab-vendor").addEventListener("click", () => setAuthMode("vendor"));
@@ -1379,6 +1687,11 @@ STALLS.forEach((stall) => {
 
 // ---------- Start ----------
 async function startApp() {
+  try {
+    loadVendorSettings();
+  } catch (err) {
+    authError(`Vendor settings could not be loaded: ${err.message}`);
+  }
   renderHome();
   renderAccount();
   renderCart();
