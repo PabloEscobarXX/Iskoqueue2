@@ -861,6 +861,28 @@ body.has-bottom-nav { padding-bottom: calc(var(--bottom-nav-height) + env(safe-a
 .profile-settings p { margin-top: 0; }
 .profile-logout { border-color: var(--closed); color: var(--closed); }
 
+/* ---------- Floating active order ---------- */
+.floating-order-status {
+  position: fixed;
+  z-index: 1050;
+  bottom: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom) + 16px);
+  left: 20px;
+  width: min(340px, calc(100vw - 40px));
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-left: 5px solid var(--accent);
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: 0 10px 32px rgba(30,36,48,.2);
+}
+.floating-order-kicker { margin: 0 0 3px; color: var(--accent); font-size: .72rem; font-weight: 800; letter-spacing: .1em; }
+.floating-order-status h2 { font-size: 1.12rem; }
+.floating-order-items { overflow: hidden; margin: 4px 0 8px; color: var(--muted); font-size: .84rem; text-overflow: ellipsis; white-space: nowrap; }
+.floating-order-stage { margin: 0; font-weight: 800; }
+.floating-order-queue { margin: 3px 0 0; color: var(--accent); font-size: .9rem; font-weight: 700; }
+.floating-order-history { margin-top: 10px; padding: 0; border: 0; background: transparent; color: var(--accent); font: inherit; font-size: .84rem; font-weight: 700; text-decoration: underline; cursor: pointer; }
+.floating-order-history:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
 @media (max-width: 800px) {
   .how-it-works { grid-template-columns: 1fr; gap: 18px; }
   .stall-circles { grid-template-columns: repeat(5, minmax(0, 1fr)); }
@@ -883,6 +905,7 @@ body.has-bottom-nav { padding-bottom: calc(var(--bottom-nav-height) + env(safe-a
   .stall-name { font-size: .72rem; }
   .cart-dock { right: 12px; bottom: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom) + 10px); width: calc(100vw - 24px); }
   .cart-panel { max-height: 68vh; }
+  .floating-order-status { top: 76px; right: 12px; bottom: auto; left: 12px; width: auto; }
   .profile-page { padding: 24px 14px calc(24px + var(--bottom-nav-height)); }
   .profile-card { padding: 16px; }
 }
