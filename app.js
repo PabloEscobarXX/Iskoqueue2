@@ -695,6 +695,7 @@ $placeOrder.addEventListener("click", () => {
       total: orderTotal,
       itemSummary: items.map((item) => `${item.quantity} × ${item.name}`).join(", "),
       payment: selectedPayment,
+      pickupDescription: selectedPickupDescription(),
       paymentStatus: "unpaid",
       orderStatus: "awaiting-confirmation",
     });
@@ -706,7 +707,7 @@ $placeOrder.addEventListener("click", () => {
   }
   document.getElementById("order-complete-message").textContent =
     `Your demo order was sent to the vendor. Pickup: ${selectedPickupDescription()}. Payment: ${selectedPayment === "gcash" ? "GCash" : "Maya"}. This app did not collect or verify payment.`;
-  document.getElementById("order-vendor-status").textContent = "Waiting for the vendor to confirm your order/payment.";
+  document.getElementById("order-vendor-status").textContent = "Status: Awaiting Confirmation · Waiting for the vendor to confirm your order/payment.";
   $reviewStep.hidden = true;
   $orderComplete.hidden = false;
   document.getElementById("checkout-step-label").textContent = "Order submitted";
@@ -736,6 +737,12 @@ const ADMIN_PASSWORD = "AdminDemo2026!";
 const DEMO_VENDOR_EMAIL = "demo.vendor@iskoqueue.local";
 const DEMO_VENDOR_PASSWORD = "VendorDemo2026!";
 const DEMO_VENDOR_STALL_ID = 1;
+const ORDER_STATUSES = [
+  { id: "awaiting-confirmation", label: "Awaiting Confirmation" },
+  { id: "preparing", label: "Preparing" },
+  { id: "ready-for-pickup", label: "Ready for Pickup" },
+  { id: "completed", label: "Completed" },
+];
 const ORIGINAL_STALL_MENUS = new Map(STALLS.map((stall) => [
   stall.id,
   stall.menu.map((item) => ({ ...item })),
@@ -903,9 +910,13 @@ function renderProfile() {
       const meta = document.createElement("p");
       const dateLabel = !Number.isNaN(date.getTime()) ? date.toLocaleString() : "Date unavailable";
       const payment = order.payment === "gcash" ? "GCash" : order.payment === "maya" ? "Maya" : "Unspecified";
-      const status = order.orderStatus === "confirmed" ? "Confirmed" : "Awaiting confirmation";
-      meta.textContent = `${dateLabel} · ${peso(Number(order.total) || 0)} · ${payment} · ${status}`;
-      card.append(heading, details, meta);
+      meta.textContent = `${dateLabel} · ${peso(Number(order.total) || 0)} · ${payment}`;
+      const pickup = document.createElement("p");
+      pickup.textContent = `Pickup: ${String(order.pickupDescription || "Schedule unavailable")}`;
+      const tracking = document.createElement("p");
+      tracking.className = "profile-order-status";
+      tracking.textContent = orderTrackingText(order);
+      card.append(heading, details, meta, pickup, tracking);
       orderList.appendChild(card);
     });
   } catch (err) {
@@ -931,6 +942,26 @@ function randomSalt() {
 function createOrderId() {
   if (window.crypto && typeof crypto.randomUUID === "function") return crypto.randomUUID();
   return `${Date.now()}-${randomSalt()}`;
+}
+
+function createQueueNumber(orders) {
+  const existing = new Set(orders.map((order) => order && order.queueNumber).filter(Boolean));
+  let number = 1;
+  while (existing.has(`Q${String(number).padStart(4, "0")}`)) number += 1;
+  return `Q${String(number).padStart(4, "0")}`;
+}
+
+function orderStatusLabel(order) {
+  const status = order && order.orderStatus === "confirmed" ? "preparing" : order && order.orderStatus;
+  return ORDER_STATUSES.find((entry) => entry.id === status)?.label || "Awaiting Confirmation";
+}
+
+function orderTrackingText(order) {
+  const status = orderStatusLabel(order);
+  if (order && order.queueNumber) return `Status: ${status} · Queue number: ${order.queueNumber}`;
+  return status === "Awaiting Confirmation"
+    ? `Status: ${status} · Waiting for the vendor to confirm your order.`
+    : `Status: ${status}`;
 }
 
 async function ensureDemoVendorData() {
@@ -961,7 +992,15 @@ async function ensureDemoVendorData() {
       ordersChanged = true;
     }
     if (!order.orderStatus) {
-      order.orderStatus = order.demoSample === true ? "confirmed" : "awaiting-confirmation";
+      order.orderStatus = order.demoSample === true ? "completed" : "awaiting-confirmation";
+      ordersChanged = true;
+    }
+    if (order.orderStatus === "confirmed") {
+      order.orderStatus = order.demoSample === true ? "completed" : "preparing";
+      ordersChanged = true;
+    }
+    if (order.orderStatus !== "awaiting-confirmation" && !order.queueNumber && order.demoSample !== true) {
+      order.queueNumber = createQueueNumber(orders);
       ordersChanged = true;
     }
     if (order.demoSample === true && order.paymentStatus !== "demo-received") {
@@ -989,7 +1028,7 @@ async function ensureDemoVendorData() {
       itemSummary: order.itemSummary,
       payment: order.payment,
       paymentStatus: "demo-received",
-      orderStatus: "confirmed",
+      orderStatus: "completed",
       demoSample: true,
     });
   });
@@ -1044,6 +1083,7 @@ function renderAccount() {
 }
 
 const $loginForm = document.getElementById("login-form");
+const $resetPasswordForm = document.getElementById("reset-password-form");
 const $signupForm = document.getElementById("signup-form");
 const $adminLoginForm = document.getElementById("admin-login-form");
 const $vendorAuth = document.getElementById("vendor-auth");
@@ -1054,11 +1094,14 @@ const $adminUserList = document.getElementById("admin-user-list");
 const $adminUserCount = document.getElementById("admin-user-count");
 const $adminEmpty = document.getElementById("admin-empty");
 let viewBeforeAuth = "home";
+let passwordResetReturnMode = "login";
 
 function setAuthMode(mode) {
   const login = mode === "login";
   const signup = mode === "signup";
+  const reset = mode === "forgot";
   $loginForm.hidden = !login;
+  $resetPasswordForm.hidden = !reset;
   $signupForm.hidden = !signup;
   $adminLoginForm.hidden = mode !== "admin";
   $vendorAuth.hidden = mode !== "vendor";
@@ -1068,8 +1111,8 @@ function setAuthMode(mode) {
   document.getElementById("tab-signup").setAttribute("aria-pressed", String(signup));
   document.getElementById("tab-vendor").setAttribute("aria-pressed", String(mode === "vendor"));
   document.getElementById("tab-admin").setAttribute("aria-pressed", String(mode === "admin"));
-  document.getElementById("auth-title").textContent = login ? "Log in" : signup ? "Create account" : mode === "vendor" ? "Vendor access" : "Admin login";
-  document.getElementById("auth-sub").textContent = login ? "Welcome back." : signup ? "Sign up to get started." : mode === "vendor" ? "Log in or create an account for your stall." : "Local demo admin access.";
+  document.getElementById("auth-title").textContent = login ? "Log in" : signup ? "Create account" : reset ? "Reset password" : mode === "vendor" ? "Vendor access" : "Admin login";
+  document.getElementById("auth-sub").textContent = login ? "Welcome back." : signup ? "Sign up to get started." : reset ? "Update a password for an account saved in this browser." : mode === "vendor" ? "Log in or create an account for your stall." : "Local demo admin access.";
   $authMsg.textContent = "";
   $authMsg.className = "form-msg";
 }
@@ -1082,7 +1125,7 @@ function showAuth(mode = "login") {
   $auth.hidden = false;
   setAuthMode(mode);
   updateCustomerChrome();
-  const form = mode === "login" ? $loginForm : mode === "signup" ? $signupForm : mode === "admin" ? $adminLoginForm : $vendorLoginForm;
+  const form = mode === "login" ? $loginForm : mode === "signup" ? $signupForm : mode === "forgot" ? $resetPasswordForm : mode === "admin" ? $adminLoginForm : $vendorLoginForm;
   form.querySelector("input").focus();
 }
 
@@ -1111,6 +1154,16 @@ function authError(msg) {
   $authMsg.textContent = msg;
   $authMsg.className = "form-msg";
 }
+
+function showPasswordReset() {
+  passwordResetReturnMode = $vendorAuth.hidden ? "login" : "vendor";
+  setAuthMode("forgot");
+  document.getElementById("reset-email").focus();
+}
+
+document.getElementById("show-reset-form").addEventListener("click", showPasswordReset);
+document.getElementById("vendor-show-reset").addEventListener("click", showPasswordReset);
+document.getElementById("reset-back-login").addEventListener("click", () => setAuthMode(passwordResetReturnMode));
 
 function renderAdminUsers() {
   const users = Object.entries(getUsers())
@@ -1166,7 +1219,8 @@ function renderVendorOrders(stallId) {
     `${allReceivedOrders.length} demo/vendor-confirmed ${allReceivedOrders.length === 1 ? "payment" : "payments"}`;
   const list = document.getElementById("vendor-order-list");
   const pendingList = document.getElementById("vendor-pending-list");
-  const pendingOrders = vendorOrders.filter((order) => order.orderStatus !== "confirmed" && order.demoSample !== true);
+  const pendingOrders = vendorOrders.filter((order) =>
+    order.orderStatus !== "completed" && order.demoSample !== true);
   const pendingCount = document.getElementById("vendor-pending-count");
   pendingCount.textContent = String(pendingOrders.length);
   document.getElementById("vendor-pending-empty").hidden = pendingOrders.length > 0;
@@ -1177,6 +1231,7 @@ function renderVendorOrders(stallId) {
     const itemsCell = document.createElement("td");
     const totalCell = document.createElement("td");
     const paymentCell = document.createElement("td");
+    const statusCell = document.createElement("td");
     const actionCell = document.createElement("td");
     const date = new Date(order.createdAt);
     dateCell.textContent = !Number.isNaN(date.getTime()) ? date.toLocaleString() : "Date unavailable";
@@ -1186,11 +1241,17 @@ function renderVendorOrders(stallId) {
     const confirmButton = document.createElement("button");
     confirmButton.type = "button";
     confirmButton.className = "vendor-confirm-button";
-    confirmButton.textContent = "Confirm payment & order";
-    confirmButton.setAttribute("aria-label", `Confirm payment and order for ${peso(Number(order.total))}`);
-    confirmButton.addEventListener("click", () => confirmVendorOrder(order.id, stallId));
+    const nextAction = {
+      "awaiting-confirmation": "Confirm & start preparing",
+      preparing: "Mark ready for pickup",
+      "ready-for-pickup": "Mark completed",
+    }[order.orderStatus] || "Update order";
+    confirmButton.textContent = nextAction;
+    confirmButton.setAttribute("aria-label", `${nextAction} for ${peso(Number(order.total))}`);
+    confirmButton.addEventListener("click", () => advanceVendorOrder(order.id, stallId));
+    statusCell.textContent = orderTrackingText(order);
     actionCell.appendChild(confirmButton);
-    row.append(dateCell, itemsCell, totalCell, paymentCell, actionCell);
+    row.append(dateCell, itemsCell, totalCell, paymentCell, statusCell, actionCell);
     pendingList.appendChild(row);
   });
   list.replaceChildren();
@@ -1212,27 +1273,36 @@ function renderVendorOrders(stallId) {
       : order.paymentStatus === "vendor-confirmed"
         ? `Vendor confirmed · ${paymentMethod} (demo)`
         : `Unpaid${paymentMethod ? ` · ${paymentMethod}` : ""}`;
-    statusCell.textContent = order.orderStatus === "confirmed" ? "Confirmed" : "Awaiting confirmation";
+    statusCell.textContent = orderTrackingText(order);
     row.append(dateCell, itemsCell, totalCell, paymentCell, statusCell);
     list.appendChild(row);
   });
 }
 
-function confirmVendorOrder(orderId, stallId) {
+function advanceVendorOrder(orderId, stallId) {
   try {
     const storedOrders = localStorage.getItem(ORDERS_KEY);
     const orders = storedOrders ? JSON.parse(storedOrders) : [];
     if (!Array.isArray(orders)) throw new Error("Saved order data is invalid.");
     const order = orders.find((entry) => entry && entry.id === orderId && Number(entry.stallId) === Number(stallId));
-    if (!order || order.orderStatus === "confirmed") return;
-    order.orderStatus = "confirmed";
-    order.paymentStatus = "vendor-confirmed";
-    order.confirmedAt = new Date().toISOString();
-    order.confirmedBy = currentUser()?.email || "";
+    if (!order || order.orderStatus === "completed" || order.demoSample === true) return;
+    const statusIndex = ORDER_STATUSES.findIndex((entry) => entry.id === order.orderStatus);
+    if (statusIndex < 0 || statusIndex >= ORDER_STATUSES.length - 1) {
+      throw new Error("This order has an invalid status.");
+    }
+    const previousStatus = order.orderStatus;
+    order.orderStatus = ORDER_STATUSES[statusIndex + 1].id;
+    order.statusUpdatedAt = new Date().toISOString();
+    if (previousStatus === "awaiting-confirmation") {
+      order.queueNumber = order.queueNumber || createQueueNumber(orders);
+      order.paymentStatus = "vendor-confirmed";
+      order.confirmedAt = order.statusUpdatedAt;
+      order.confirmedBy = currentUser()?.email || "";
+    }
     localStorage.setItem(ORDERS_KEY, JSON.stringify(orders));
     renderVendorOrders(stallId);
     document.getElementById("vendor-order-alert").textContent =
-      `Confirmed ${peso(Number(order.total))} order. Payment marked vendor-confirmed in this demo only.`;
+      `Order updated to ${orderStatusLabel(order)}${order.queueNumber ? ` · Queue number ${order.queueNumber}` : ""}.`;
   } catch (err) {
     document.getElementById("vendor-order-alert").textContent = `Could not confirm order: ${err.message}`;
   }
@@ -1267,11 +1337,12 @@ function handleOrdersUpdate(oldValue, newValue) {
       const previousIds = new Set(oldOrders.filter(Boolean).map((order) => order.id));
       const newVendorOrders = newOrders.filter((order) =>
         order && Number(order.stallId) === Number(user.stallId) &&
-        order.orderStatus !== "confirmed" && !previousIds.has(order.id));
+        order.orderStatus === "awaiting-confirmation" && !previousIds.has(order.id));
       renderVendorOrders(user.stallId);
       if (newVendorOrders.length) {
         const pending = newOrders.filter((order) =>
-          order && Number(order.stallId) === Number(user.stallId) && order.orderStatus !== "confirmed");
+          order && Number(order.stallId) === Number(user.stallId) &&
+          order.orderStatus === "awaiting-confirmation");
         document.getElementById("vendor-order-alert").textContent =
           `New order received! ${pending.length} ${pending.length === 1 ? "order is" : "orders are"} waiting for confirmation.`;
         playVendorOrderAlert();
@@ -1280,9 +1351,7 @@ function handleOrdersUpdate(oldValue, newValue) {
     if (activeCustomerOrderId) {
       const order = newOrders.find((entry) => entry && entry.id === activeCustomerOrderId);
       if (order) {
-        document.getElementById("order-vendor-status").textContent = order.orderStatus === "confirmed"
-          ? "Vendor confirmed your order and marked payment as received in this demo."
-          : "Waiting for the vendor to confirm your order/payment.";
+        document.getElementById("order-vendor-status").textContent = orderTrackingText(order);
       }
     }
     if (user && user.role === "customer" && !$profilePage.hidden) renderProfile();
@@ -1495,6 +1564,30 @@ $loginForm.addEventListener("submit", async (e) => {
     enterSignedInUser(user, email);
   } catch (err) {
     authError(err.message);
+  }
+});
+
+$resetPasswordForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  try {
+    const email = document.getElementById("reset-email").value.trim().toLowerCase();
+    const password = document.getElementById("reset-password").value;
+    const confirmation = document.getElementById("reset-password-confirm").value;
+    if (password !== confirmation) return authError("The new passwords do not match.");
+    const users = getUsers();
+    const user = users[email];
+    if (!user || !["customer", "vendor"].includes(user.role)) {
+      return authError("No matching customer or vendor account was found in this browser.");
+    }
+    const salt = randomSalt();
+    user.salt = salt;
+    user.hash = await hashPassword(password, salt);
+    saveUsers(users);
+    $resetPasswordForm.reset();
+    $authMsg.textContent = "Password updated for this browser's demo account. No reset email was sent.";
+    $authMsg.className = "form-msg ok";
+  } catch (err) {
+    authError(`Could not reset password: ${err.message}`);
   }
 });
 
