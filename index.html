@@ -176,6 +176,19 @@
         <label for="login-password">Password</label>
         <input id="login-password" type="password" required autocomplete="current-password" />
         <button class="submit" type="submit">Log in</button>
+        <button class="link-btn dark" type="button" id="show-reset-form">Forgot password?</button>
+      </form>
+
+      <form id="reset-password-form" hidden>
+        <label for="reset-email">Account email</label>
+        <input id="reset-email" type="email" required autocomplete="email" />
+        <label for="reset-password">New password (at least 8 characters)</label>
+        <input id="reset-password" type="password" required minlength="8" autocomplete="new-password" />
+        <label for="reset-password-confirm">Confirm new password</label>
+        <input id="reset-password-confirm" type="password" required minlength="8" autocomplete="new-password" />
+        <p class="auth-demo-note">Local demo only: this changes the password saved in this browser. No reset email or identity verification is available.</p>
+        <button class="submit" type="submit">Reset password</button>
+        <button class="link-btn dark" type="button" id="reset-back-login">Back to log in</button>
       </form>
 
       <form id="signup-form" hidden>
@@ -203,6 +216,7 @@
           <label for="vendor-login-password">Password</label>
           <input id="vendor-login-password" type="password" required autocomplete="current-password" />
           <button class="submit" type="submit">Log in to vendor account</button>
+          <button class="link-btn dark" type="button" id="vendor-show-reset">Forgot password?</button>
           <p class="vendor-demo-credentials">Demo account<br />Email: <strong>demo.vendor@iskoqueue.local</strong><br />Password: <strong>VendorDemo2026!</strong></p>
           <button class="link-btn dark" type="button" id="vendor-show-signup">Create a vendor account</button>
         </form>
@@ -245,7 +259,7 @@
         <button class="admin-logout" type="button" id="vendor-logout">Log out</button>
       </div>
     </header>
-    <p class="admin-notice">Demo data only, saved in this browser. Sample payments are simulated. For real orders, check the customer’s payment externally before selecting “Confirm payment &amp; order”; this app does not verify or process payments.</p>
+    <p class="admin-notice">Demo data only, saved in this browser. Sample payments are simulated. For real orders, verify payment externally before confirming an order; this app does not verify or process payments.</p>
     <details class="admin-card vendor-menu-card">
       <summary class="vendor-section-summary">
         <span class="vendor-section-title">
@@ -291,17 +305,17 @@
     </section>
     <section class="admin-card" aria-labelledby="vendor-incoming-title">
       <div class="vendor-orders-heading">
-        <h2 id="vendor-incoming-title">Incoming orders <span id="vendor-pending-count">0</span></h2>
+        <h2 id="vendor-incoming-title">Active orders <span id="vendor-pending-count">0</span></h2>
         <button class="link-btn" type="button" id="vendor-sound-toggle" aria-pressed="false">Enable order sound</button>
       </div>
       <p id="vendor-order-alert" class="vendor-order-alert" role="status" aria-live="polite">New orders will appear here while this dashboard is open.</p>
       <div class="admin-table-wrap">
         <table class="admin-table">
-          <thead><tr><th scope="col">Received</th><th scope="col">Items</th><th scope="col">Total</th><th scope="col">Payment</th><th scope="col">Action</th></tr></thead>
+          <thead><tr><th scope="col">Received</th><th scope="col">Items</th><th scope="col">Total</th><th scope="col">Payment</th><th scope="col">Status</th><th scope="col">Action</th></tr></thead>
           <tbody id="vendor-pending-list"></tbody>
         </table>
       </div>
-      <p id="vendor-pending-empty" class="admin-empty">No orders waiting for confirmation.</p>
+      <p id="vendor-pending-empty" class="admin-empty">No active orders.</p>
     </section>
     <section class="admin-card" aria-labelledby="vendor-orders-title">
       <h2 id="vendor-orders-title">Submitted orders</h2>
@@ -450,7 +464,7 @@
         <div class="order-complete" id="order-complete" hidden>
           <h3>Order submitted!</h3>
           <p id="order-complete-message"></p>
-          <p id="order-vendor-status" class="cart-hint" role="status">Waiting for the vendor to confirm.</p>
+          <p id="order-vendor-status" class="cart-hint" role="status">Status: Awaiting Confirmation · Waiting for the vendor to confirm.</p>
           <button class="cart-checkout" type="button" id="new-order">Done</button>
         </div>
       </div>
