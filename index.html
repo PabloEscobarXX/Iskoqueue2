@@ -246,6 +246,39 @@
       </div>
     </header>
     <p class="admin-notice">Demo data only, saved in this browser. Sample payments are simulated. For real orders, check the customer’s payment externally before selecting “Confirm payment &amp; order”; this app does not verify or process payments.</p>
+    <details class="admin-card vendor-menu-card">
+      <summary class="vendor-section-summary">
+        <span class="vendor-section-title">
+          <strong>Shop status</strong>
+          <span id="vendor-shop-status" class="vendor-shop-status" role="status" aria-live="polite"></span>
+        </span>
+        <span class="vendor-section-action">Click to open or close your shop</span>
+      </summary>
+      <div class="vendor-section-content">
+        <p>Choose whether customers can place orders from your stall.</p>
+        <button class="vendor-shop-toggle" type="button" id="vendor-shop-toggle">Close shop</button>
+      </div>
+    </details>
+    <details class="admin-card vendor-menu-card">
+      <summary class="vendor-section-summary">
+        <span class="vendor-section-title">
+          <strong>Edit your menu &amp; prices</strong>
+          <span class="vendor-section-description">Manage the items and prices customers see</span>
+        </span>
+        <span class="vendor-section-action">Click to edit menu</span>
+      </summary>
+      <div class="vendor-section-content">
+        <p class="vendor-menu-help">Changes are saved in this browser and appear on your customer-facing menu.</p>
+        <form id="vendor-menu-form">
+          <div id="vendor-menu-items"></div>
+          <div class="vendor-menu-actions">
+            <button class="link-btn" type="button" id="vendor-menu-add">Add menu item</button>
+            <button class="vendor-confirm-button" type="submit">Save menu</button>
+          </div>
+          <p id="vendor-menu-feedback" class="vendor-menu-feedback" role="status" aria-live="polite"></p>
+        </form>
+      </div>
+    </details>
     <section class="admin-card vendor-summary" aria-labelledby="vendor-sales-title">
       <h2 id="vendor-sales-title">Total sales</h2>
       <p class="vendor-sales-total" id="vendor-sales-total">₱0</p>
