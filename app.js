@@ -478,6 +478,7 @@ function updateCustomerChrome(activeNav = "") {
   $bottomNav.hidden = !enabled;
   $cartDock.hidden = !enabled;
   document.body.classList.toggle("has-bottom-nav", enabled);
+  renderFloatingOrderStatus();
   if (!enabled) {
     $cartPanel.hidden = true;
     $cartToggle.setAttribute("aria-expanded", "false");
@@ -711,6 +712,7 @@ $placeOrder.addEventListener("click", () => {
   $reviewStep.hidden = true;
   $orderComplete.hidden = false;
   document.getElementById("checkout-step-label").textContent = "Order submitted";
+  renderFloatingOrderStatus();
 });
 
 document.getElementById("new-order").addEventListener("click", () => {
@@ -722,6 +724,8 @@ document.getElementById("new-order").addEventListener("click", () => {
   $cartToggle.setAttribute("aria-expanded", "false");
   setActiveNav("");
 });
+
+document.getElementById("floating-order-history").addEventListener("click", showProfile);
 
 // ---------- Accounts ----------
 // DEMO ONLY: accounts are saved in this browser's localStorage, so they only exist on
@@ -962,6 +966,44 @@ function orderTrackingText(order) {
   return status === "Awaiting Confirmation"
     ? `Status: ${status} · Waiting for the vendor to confirm your order.`
     : `Status: ${status}`;
+}
+
+function renderFloatingOrderStatus() {
+  const notification = document.getElementById("floating-order-status");
+  const user = currentUser();
+  const customerPageVisible = !$home.hidden || !$results.hidden || !$profilePage.hidden;
+  if (!user || user.role !== "customer" || !customerPageVisible) {
+    notification.hidden = true;
+    return;
+  }
+
+  try {
+    const storedOrders = localStorage.getItem(ORDERS_KEY);
+    const orders = storedOrders ? JSON.parse(storedOrders) : [];
+    if (!Array.isArray(orders)) throw new Error("Saved order data is invalid.");
+    const order = orders
+      .filter((entry) => entry && entry.customerEmail === user.email && entry.orderStatus !== "completed")
+      .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")))[0];
+    if (!order) {
+      notification.hidden = true;
+      return;
+    }
+
+    const stall = STALLS.find((entry) => entry.id === Number(order.stallId));
+    document.getElementById("floating-order-stall").textContent = stall ? stall.name : "Your food stall";
+    document.getElementById("floating-order-items").textContent = String(order.itemSummary || "Order items");
+    document.getElementById("floating-order-stage").textContent = orderStatusLabel(order);
+    const queue = document.getElementById("floating-order-queue");
+    queue.hidden = !order.queueNumber;
+    queue.textContent = order.queueNumber ? `Queue number · ${order.queueNumber}` : "";
+    notification.hidden = false;
+  } catch (err) {
+    notification.hidden = false;
+    document.getElementById("floating-order-stall").textContent = "Order status unavailable";
+    document.getElementById("floating-order-items").textContent = `Could not load your order: ${err.message}`;
+    document.getElementById("floating-order-stage").textContent = "";
+    document.getElementById("floating-order-queue").hidden = true;
+  }
 }
 
 async function ensureDemoVendorData() {
@@ -1354,6 +1396,7 @@ function handleOrdersUpdate(oldValue, newValue) {
         document.getElementById("order-vendor-status").textContent = orderTrackingText(order);
       }
     }
+    renderFloatingOrderStatus();
     if (user && user.role === "customer" && !$profilePage.hidden) renderProfile();
   } catch (err) {
     if (user && user.role === "vendor" && !$vendorPanel.hidden) {
