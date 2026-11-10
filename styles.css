@@ -905,7 +905,7 @@ body.has-bottom-nav { padding-bottom: calc(var(--bottom-nav-height) + env(safe-a
   .stall-name { font-size: .72rem; }
   .cart-dock { right: 12px; bottom: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom) + 10px); width: calc(100vw - 24px); }
   .cart-panel { max-height: 68vh; }
-  .floating-order-status { top: 76px; right: 12px; bottom: auto; left: 12px; width: auto; }
+  .floating-order-status { top: auto; right: 12px; bottom: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom) + 16px); left: 12px; width: auto; }
   .profile-page { padding: 24px 14px calc(24px + var(--bottom-nav-height)); }
   .profile-card { padding: 16px; }
 }
