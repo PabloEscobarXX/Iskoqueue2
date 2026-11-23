@@ -2,6 +2,10 @@
 let activeCategory = "All";
 let query = "";
 let currentDetailStall = null;
+const RECENT_SEARCHES_KEY = "kainan_recent_searches";
+const RESULTS_PER_PAGE = 10;
+let currentResultsPage = 1;
+let vendorSubmittedPage = 1;
 
 // ---------- Elements ----------
 const $cards = document.getElementById("cards");
@@ -109,48 +113,78 @@ function renderChips() {
 
 // ---------- List + markers ----------
 function renderList() {
-  const results = STALLS.filter(matches);
+  const allResults = STALLS.filter(matches);
+  const totalPages = Math.max(1, Math.ceil(allResults.length / RESULTS_PER_PAGE));
+  currentResultsPage = Math.min(currentResultsPage, totalPages);
+  const start = (currentResultsPage - 1) * RESULTS_PER_PAGE;
+  const results = allResults.slice(start, start + RESULTS_PER_PAGE);
 
-  $count.textContent = `${results.length} ${results.length === 1 ? "stall" : "stalls"} found`;
+  $count.textContent = `${allResults.length} ${allResults.length === 1 ? "stall" : "stalls"} found`;
   $cards.innerHTML = "";
   markerLayer.clearLayers();
 
-  if (results.length === 0) {
-    $cards.innerHTML = `<li class="empty">No stalls match your search. Try a different dish or category.</li>`;
-    return;
-  }
-
-  results.forEach((stall) => {
-    // card
-    const open = isOpenNow(stall);
-    const li = document.createElement("li");
-    li.innerHTML = `
-      <button class="card" type="button">
-        <div class="thumb" style="background:${stall.color}22">${stall.emoji}</div>
-        <div>
-          <h3>${stall.name}</h3>
-          <div class="meta">${stall.category} · ${stall.area}</div>
-          <div class="row">
-            <span>★ ${stall.rating}</span>
-            <span>${stall.eta}</span>
-            <span>Delivery ${peso(stall.deliveryFee)}</span>
-            <span class="status ${open ? "is-open" : "is-closed"}">${open ? "Open now" : "Closed"}</span>
-          </div>
-        </div>
-      </button>`;
-    li.querySelector("button").addEventListener("click", () => showDetail(stall));
-    $cards.appendChild(li);
-
-    // map marker
+  // Keep every matching shop on the map; pagination only limits the side-list cards.
+  allResults.forEach((stall) => {
     L.marker([stall.lat, stall.lng], { icon: makePin(stall), title: stall.name })
       .addTo(markerLayer)
       .bindTooltip(stall.name)
       .on("click", () => showDetail(stall));
   });
 
-  // zoom the map so every result is visible
-  const bounds = L.latLngBounds(results.map((s) => [s.lat, s.lng]));
-  map.fitBounds(bounds, { padding: [50, 50], maxZoom: 19 });
+  if (results.length === 0) {
+    $cards.innerHTML = `<li class="empty">No stalls match your search. Try a different dish or category.</li>`;
+  } else {
+    results.forEach((stall) => {
+      const open = isOpenNow(stall);
+      const li = document.createElement("li");
+      li.innerHTML = `
+        <button class="card" type="button">
+          <div class="thumb" style="background:${stall.color}22">${stall.emoji}</div>
+          <div>
+            <h3>${stall.name}</h3>
+            <div class="meta">${stall.category} · ${stall.area}</div>
+            <div class="row">
+              <span>★ ${stall.rating}</span>
+              <span>${stall.eta}</span>
+              <span>Delivery ${peso(stall.deliveryFee)}</span>
+              <span class="status ${open ? "is-open" : "is-closed"}">${open ? "Open now" : "Closed"}</span>
+            </div>
+          </div>
+        </button>`;
+      li.querySelector("button").addEventListener("click", () => showDetail(stall));
+      $cards.appendChild(li);
+    });
+  }
+
+  // Zoom the map to every matching shop, not only the first page of list cards.
+  if (allResults.length) {
+    const bounds = L.latLngBounds(allResults.map((s) => [s.lat, s.lng]));
+    map.fitBounds(bounds, { padding: [50, 50], maxZoom: 19 });
+  }
+
+  let pagination = document.getElementById("results-pagination");
+  if (!pagination) {
+    pagination = document.createElement("nav");
+    pagination.id = "results-pagination";
+    pagination.className = "results-pagination";
+    pagination.setAttribute("aria-label", "Search result pages");
+    $cards.after(pagination);
+  }
+  pagination.replaceChildren();
+  if (totalPages > 1) {
+    for (let page = 1; page <= totalPages; page++) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = String(page);
+      button.setAttribute("aria-current", String(page === currentResultsPage));
+      button.disabled = page === currentResultsPage;
+      button.addEventListener("click", () => {
+        currentResultsPage = page;
+        renderList();
+      });
+      pagination.appendChild(button);
+    }
+  }
 }
 
 // ---------- Detail view (menu + location) ----------
@@ -230,7 +264,22 @@ $search.addEventListener("input", (e) => {
     $detailView.hidden = true;
     $listView.hidden = false;
   }
+  currentResultsPage = 1;
   renderList();
+});
+
+$search.addEventListener("change", () => {
+  const term = $search.value.trim();
+  if (!term) return;
+  try {
+    const saved = JSON.parse(localStorage.getItem(RECENT_SEARCHES_KEY) || "[]");
+    const searches = (Array.isArray(saved) ? saved : [])
+      .filter((value) => typeof value === "string")
+      .filter((value) => value.toLowerCase() !== term.toLowerCase());
+    searches.unshift(term);
+    localStorage.setItem(RECENT_SEARCHES_KEY, JSON.stringify(searches.slice(0, 5)));
+  } catch (_) {}
+  renderRecentSearches();
 });
 
 // ---------- Home page <-> results page ----------
@@ -269,12 +318,77 @@ function renderHome() {
     button.addEventListener("click", () => showResults({ q: stall.name }));
     $homeStalls.appendChild(button);
   });
+
+  const adGrid = document.getElementById("home-ad-grid");
+  adGrid.replaceChildren();
+  STALLS.slice(0, 8).forEach((stall, index) => {
+    const adType = index < 2
+      ? "Exclusive Brand Sponsor"
+      : index < 6
+        ? "Standard Advertising"
+        : "Sponsored Promotion";
+    const ad = document.createElement("button");
+    ad.type = "button";
+    ad.className = "ad-card";
+    ad.innerHTML = `
+      <span class="ad-label">${escapeHTML(adType)}</span>
+      <span class="ad-art" style="--stall-color:${stall.color}" aria-hidden="true">${stall.emoji}</span>
+      <strong></strong>
+      <span>${stall.category} · ${stall.eta}</span>`;
+    ad.querySelector("strong").textContent = stall.name;
+    ad.addEventListener("click", () => showResults({ q: stall.name }));
+    adGrid.appendChild(ad);
+  });
+}
+
+function renderRecentSearches() {
+  const container = document.getElementById("recent-searches");
+  const resultsPage = document.getElementById("results");
+  container.replaceChildren();
+  try {
+    const saved = JSON.parse(localStorage.getItem(RECENT_SEARCHES_KEY) || "[]");
+    const searches = (Array.isArray(saved) ? saved : [])
+      .filter((value) => typeof value === "string" && value.trim())
+      .slice(0, 5);
+    if (!searches.length) {
+      container.hidden = true;
+      resultsPage.classList.remove("has-recent-searches");
+      return;
+    }
+    const label = document.createElement("strong");
+    label.textContent = "Recent searches";
+    container.appendChild(label);
+    searches.forEach((term) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = term;
+      button.addEventListener("click", () => showResults({ q: term }));
+      container.appendChild(button);
+    });
+    container.hidden = false;
+    resultsPage.classList.add("has-recent-searches");
+  } catch (_) {
+    container.hidden = true;
+    resultsPage.classList.remove("has-recent-searches");
+  }
 }
 
 function showResults({ q = "", cat = "All" } = {}) {
   query = q;
   activeCategory = cat;
+  currentResultsPage = 1;
   $search.value = q;
+
+  if (q.trim()) {
+    try {
+      const saved = JSON.parse(localStorage.getItem(RECENT_SEARCHES_KEY) || "[]");
+      const searches = (Array.isArray(saved) ? saved : [])
+        .filter((value) => typeof value === "string")
+        .filter((value) => value.toLowerCase() !== q.trim().toLowerCase());
+      searches.unshift(q.trim());
+      localStorage.setItem(RECENT_SEARCHES_KEY, JSON.stringify(searches.slice(0, 5)));
+    } catch (_) {}
+  }
 
   $home.hidden = true;
   $auth.hidden = true;
@@ -286,6 +400,7 @@ function showResults({ q = "", cat = "All" } = {}) {
   map.invalidateSize(); // the map was hidden, so tell Leaflet its real size
   renderChips();
   renderList();
+  renderRecentSearches();
   updateCustomerChrome("search");
   window.scrollTo(0, 0);
 }
@@ -305,7 +420,6 @@ $craveForm.addEventListener("submit", (e) => {
   showResults({ q: $craveInput.value });
 });
 document.getElementById("see-all").addEventListener("click", () => showResults());
-document.getElementById("promo-browse").addEventListener("click", () => showResults());
 document.getElementById("brand").addEventListener("click", showHome);
 
 // ---------- Demo cart ----------
@@ -517,11 +631,13 @@ $bottomNav.addEventListener("click", (event) => {
       showHome();
       break;
     case "search":
+      document.getElementById("results").classList.remove("map-only");
       showResults();
       setActiveNav("search");
       $search.focus();
       break;
     case "map":
+      document.getElementById("results").classList.add("map-only");
       showResults();
       setActiveNav("map");
       map.invalidateSize();
@@ -712,6 +828,10 @@ $placeOrder.addEventListener("click", () => {
   $reviewStep.hidden = true;
   $orderComplete.hidden = false;
   document.getElementById("checkout-step-label").textContent = "Order submitted";
+  const cancelButton = document.getElementById("cancel-active-order");
+  cancelButton.hidden = false;
+  cancelButton.disabled = false;
+  cancelButton.textContent = "Cancel order · 2:00";
   renderFloatingOrderStatus();
 });
 
@@ -726,6 +846,32 @@ document.getElementById("new-order").addEventListener("click", () => {
 });
 
 document.getElementById("floating-order-history").addEventListener("click", showProfile);
+document.getElementById("cancel-active-order").addEventListener("click", () => {
+  if (activeCustomerOrderId) cancelCustomerOrder(activeCustomerOrderId);
+});
+
+document.getElementById("chat-head").addEventListener("click", () => {
+  const panel = document.getElementById("chat-panel");
+  const willOpen = panel.hidden;
+  panel.hidden = !willOpen;
+  document.getElementById("chat-head").setAttribute("aria-expanded", String(willOpen));
+  if (willOpen && activeCustomerOrderId) {
+    try {
+      const orders = JSON.parse(localStorage.getItem(ORDERS_KEY) || "[]");
+      const order = (Array.isArray(orders) ? orders : [])
+        .find((entry) => entry && entry.id === activeCustomerOrderId);
+      if (order) {
+        sessionStorage.setItem(`chat_read_${order.id}`, order.statusUpdatedAt || order.confirmedAt || "");
+        document.getElementById("chat-head-badge").hidden = true;
+      }
+    } catch (_) {}
+  }
+});
+
+document.getElementById("chat-panel-close").addEventListener("click", () => {
+  document.getElementById("chat-panel").hidden = true;
+  document.getElementById("chat-head").setAttribute("aria-expanded", "false");
+});
 
 // ---------- Accounts ----------
 // DEMO ONLY: accounts are saved in this browser's localStorage, so they only exist on
@@ -736,6 +882,8 @@ const SESSION_KEY = "kainan_session";
 const ORDERS_KEY = "kainan_demo_orders";
 const VENDOR_MENUS_KEY = "kainan_vendor_menus";
 const VENDOR_SHOP_STATUS_KEY = "kainan_vendor_shop_status";
+const VENDOR_QUEUE_KEY = "kainan_vendor_queues";
+const ORDER_CANCEL_WINDOW_MS = 2 * 60 * 1000;
 const ADMIN_EMAIL = "admin@iskoqueue.local";
 const ADMIN_PASSWORD = "AdminDemo2026!";
 const DEMO_VENDOR_EMAIL = "demo.vendor@iskoqueue.local";
@@ -921,6 +1069,19 @@ function renderProfile() {
       tracking.className = "profile-order-status";
       tracking.textContent = orderTrackingText(order);
       card.append(heading, details, meta, pickup, tracking);
+      if (order.orderStatus === "awaiting-confirmation") {
+        const cancelButton = document.createElement("button");
+        cancelButton.type = "button";
+        cancelButton.className = "profile-order-cancel";
+        cancelButton.dataset.cancelOrderId = order.id;
+        const cancellable = canCancelOrder(order);
+        cancelButton.disabled = !cancellable;
+        cancelButton.textContent = cancellable
+          ? `Cancel order · ${formatCancelRemaining(order)}`
+          : "Cancellation window closed";
+        cancelButton.addEventListener("click", () => cancelCustomerOrder(order.id));
+        card.appendChild(cancelButton);
+      }
       orderList.appendChild(card);
     });
   } catch (err) {
@@ -948,6 +1109,50 @@ function createOrderId() {
   return `${Date.now()}-${randomSalt()}`;
 }
 
+function canCancelOrder(order) {
+  if (!order || order.orderStatus !== "awaiting-confirmation") return false;
+  const createdAt = new Date(order.createdAt).getTime();
+  return Number.isFinite(createdAt) && Date.now() - createdAt >= 0
+    && Date.now() - createdAt < ORDER_CANCEL_WINDOW_MS;
+}
+
+function formatCancelRemaining(order) {
+  const createdAt = new Date(order.createdAt).getTime();
+  if (!Number.isFinite(createdAt)) return "Cancellation closed";
+  const remainingMs = Math.max(0, ORDER_CANCEL_WINDOW_MS - (Date.now() - createdAt));
+  const remainingSeconds = Math.ceil(remainingMs / 1000);
+  const minutes = Math.floor(remainingSeconds / 60);
+  const seconds = remainingSeconds % 60;
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
+
+function cancelCustomerOrder(orderId) {
+  const user = currentUser();
+  if (!user || user.role !== "customer") return false;
+  try {
+    const storedOrders = localStorage.getItem(ORDERS_KEY);
+    const orders = storedOrders ? JSON.parse(storedOrders) : [];
+    if (!Array.isArray(orders)) throw new Error("Saved order data is invalid.");
+    const order = orders.find((entry) =>
+      entry && entry.id === orderId && entry.customerEmail === user.email);
+    if (!order) throw new Error("Order not found.");
+    if (!canCancelOrder(order)) throw new Error("The 2-minute cancellation window has closed.");
+    order.orderStatus = "cancelled";
+    order.cancelledAt = new Date().toISOString();
+    localStorage.setItem(ORDERS_KEY, JSON.stringify(orders));
+    renderFloatingOrderStatus();
+    if (!$profilePage.hidden) renderProfile();
+    document.getElementById("order-vendor-status").textContent =
+      "Status: Cancelled · This order was cancelled.";
+    document.getElementById("cancel-active-order").hidden = true;
+    return true;
+  } catch (err) {
+    document.getElementById("order-vendor-status").textContent =
+      `Could not cancel order: ${err.message}`;
+    return false;
+  }
+}
+
 function createQueueNumber(orders) {
   const existing = new Set(orders.map((order) => order && order.queueNumber).filter(Boolean));
   let number = 1;
@@ -956,6 +1161,7 @@ function createQueueNumber(orders) {
 }
 
 function orderStatusLabel(order) {
+  if (order && order.orderStatus === "cancelled") return "Cancelled";
   const status = order && order.orderStatus === "confirmed" ? "preparing" : order && order.orderStatus;
   return ORDER_STATUSES.find((entry) => entry.id === status)?.label || "Awaiting Confirmation";
 }
@@ -968,12 +1174,53 @@ function orderTrackingText(order) {
     : `Status: ${status}`;
 }
 
+function renderOrderChat(order) {
+  const chatHead = document.getElementById("chat-head");
+  const badge = document.getElementById("chat-head-badge");
+  const messages = document.getElementById("chat-messages");
+  const stall = order
+    ? STALLS.find((entry) => entry.id === Number(order.stallId))
+    : null;
+
+  if (!order) {
+    chatHead.hidden = true;
+    document.getElementById("chat-panel").hidden = true;
+    return;
+  }
+
+  chatHead.hidden = false;
+  document.getElementById("chat-stall-name").textContent =
+    stall ? stall.name : "Order updates";
+  document.getElementById("chat-stall-status").textContent =
+    orderStatusLabel(order);
+
+  const unreadKey = `chat_read_${order.id}`;
+  const statusVersion = order.statusUpdatedAt || order.confirmedAt || order.createdAt || "";
+  const unread = sessionStorage.getItem(unreadKey) !== statusVersion;
+  badge.hidden = !unread;
+  badge.textContent = unread ? "1" : "0";
+
+  messages.replaceChildren();
+  const statusMessage = document.createElement("p");
+  statusMessage.className = "chat-message";
+  statusMessage.textContent = orderTrackingText(order);
+  const time = document.createElement("small");
+  const updated = new Date(order.statusUpdatedAt || order.confirmedAt || order.createdAt);
+  time.textContent = !Number.isNaN(updated.getTime())
+    ? updated.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
+    : "Order update";
+  statusMessage.appendChild(time);
+  messages.appendChild(statusMessage);
+}
+
 function renderFloatingOrderStatus() {
   const notification = document.getElementById("floating-order-status");
   const user = currentUser();
   const customerPageVisible = !$home.hidden || !$results.hidden || !$profilePage.hidden;
   if (!user || user.role !== "customer" || !customerPageVisible) {
     notification.hidden = true;
+    document.getElementById("chat-head").hidden = true;
+    document.getElementById("chat-panel").hidden = true;
     return;
   }
 
@@ -982,10 +1229,12 @@ function renderFloatingOrderStatus() {
     const orders = storedOrders ? JSON.parse(storedOrders) : [];
     if (!Array.isArray(orders)) throw new Error("Saved order data is invalid.");
     const order = orders
-      .filter((entry) => entry && entry.customerEmail === user.email && entry.orderStatus !== "completed")
+      .filter((entry) => entry && entry.customerEmail === user.email
+        && entry.orderStatus !== "completed" && entry.orderStatus !== "cancelled")
       .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")))[0];
     if (!order) {
       notification.hidden = true;
+      renderOrderChat(null);
       return;
     }
 
@@ -996,7 +1245,17 @@ function renderFloatingOrderStatus() {
     const queue = document.getElementById("floating-order-queue");
     queue.hidden = !order.queueNumber;
     queue.textContent = order.queueNumber ? `Queue number · ${order.queueNumber}` : "";
+    const cancelButton = document.getElementById("floating-order-cancel");
+    cancelButton.dataset.orderId = order.id;
+    const cancellable = canCancelOrder(order);
+    cancelButton.hidden = false;
+    cancelButton.disabled = !cancellable;
+    cancelButton.textContent = cancellable
+      ? `Cancel order · ${formatCancelRemaining(order)}`
+      : "Cancellation window closed";
+    cancelButton.onclick = () => cancelCustomerOrder(order.id);
     notification.hidden = false;
+    renderOrderChat(order);
   } catch (err) {
     notification.hidden = false;
     document.getElementById("floating-order-stall").textContent = "Order status unavailable";
@@ -1241,6 +1500,73 @@ function openAdminPanel() {
   updateCustomerChrome();
 }
 
+function readVendorQueues() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(VENDOR_QUEUE_KEY) || "{}");
+    return saved && typeof saved === "object" ? saved : {};
+  } catch (_) {
+    return {};
+  }
+}
+
+function saveVendorQueues(queues) {
+  localStorage.setItem(VENDOR_QUEUE_KEY, JSON.stringify(queues));
+}
+
+function getVendorQueue(stallId) {
+  const queues = readVendorQueues();
+  if (!queues[String(stallId)]) {
+    queues[String(stallId)] = { waiting: [], nowServing: null, served: 0, paused: false };
+  }
+  return { queues, queue: queues[String(stallId)] };
+}
+
+function getNextQueueNumber(stallId) {
+  const { queue } = getVendorQueue(stallId);
+  const numbers = [...queue.waiting.map((entry) => Number(entry.number) || 0), queue.nowServing ? Number(queue.nowServing.number) || 0 : 0];
+  return Math.max(...numbers, 0) + 1;
+}
+
+function renderVendorQueue(stallId) {
+  const { queue } = getVendorQueue(stallId);
+  const waiting = Array.isArray(queue.waiting) ? queue.waiting : [];
+  const nowServing = queue.nowServing;
+
+  document.getElementById("vendor-now-serving").textContent =
+    nowServing ? `#${String(nowServing.number).padStart(3, "0")}` : "#000";
+  document.getElementById("vendor-now-customer").textContent =
+    nowServing ? nowServing.name : "Queue is empty";
+  document.getElementById("vendor-now-status").textContent =
+    queue.paused ? "Queue paused" : nowServing ? nowServing.service : "Waiting for the next customer";
+  document.getElementById("vendor-queue-waiting").textContent = String(waiting.length);
+  document.getElementById("vendor-queue-estimate").textContent =
+    `${waiting.length * 5} min`;
+  document.getElementById("vendor-queue-served").textContent = String(queue.served || 0);
+  document.getElementById("vendor-queue-count").textContent =
+    `${waiting.length + (nowServing ? 1 : 0)} ${waiting.length + (nowServing ? 1 : 0) === 1 ? "customer" : "customers"} total`;
+  document.getElementById("vendor-pause-queue").textContent =
+    queue.paused ? "Resume queue" : "Pause queue";
+
+  const list = document.getElementById("vendor-queue-list");
+  list.replaceChildren();
+  waiting.forEach((entry) => {
+    const row = document.createElement("div");
+    row.className = "vendor-queue-row";
+    const number = document.createElement("strong");
+    number.textContent = `#${String(entry.number).padStart(3, "0")}`;
+    const name = document.createElement("span");
+    name.textContent = entry.name;
+    row.append(number, name);
+    list.appendChild(row);
+  });
+  if (!waiting.length && !nowServing) {
+    const empty = document.createElement("p");
+    empty.className = "vendor-order-count";
+    empty.textContent = "No customers in queue.";
+    list.appendChild(empty);
+  }
+}
+
 function renderVendorOrders(stallId) {
   const storedOrders = localStorage.getItem(ORDERS_KEY);
   const orders = storedOrders ? JSON.parse(storedOrders) : [];
@@ -1262,7 +1588,7 @@ function renderVendorOrders(stallId) {
   const list = document.getElementById("vendor-order-list");
   const pendingList = document.getElementById("vendor-pending-list");
   const pendingOrders = vendorOrders.filter((order) =>
-    order.orderStatus !== "completed" && order.demoSample !== true);
+    order.orderStatus !== "completed" && order.orderStatus !== "cancelled" && order.demoSample !== true);
   const pendingCount = document.getElementById("vendor-pending-count");
   pendingCount.textContent = String(pendingOrders.length);
   document.getElementById("vendor-pending-empty").hidden = pendingOrders.length > 0;
@@ -1298,7 +1624,10 @@ function renderVendorOrders(stallId) {
   });
   list.replaceChildren();
   document.getElementById("vendor-orders-empty").hidden = vendorOrders.length > 0;
-  vendorOrders.forEach((order) => {
+  const submittedTotalPages = Math.max(1, Math.ceil(vendorOrders.length / RESULTS_PER_PAGE));
+  vendorSubmittedPage = Math.min(vendorSubmittedPage, submittedTotalPages);
+  const submittedStart = (vendorSubmittedPage - 1) * RESULTS_PER_PAGE;
+  vendorOrders.slice(submittedStart, submittedStart + RESULTS_PER_PAGE).forEach((order) => {
     const row = document.createElement("tr");
     const dateCell = document.createElement("td");
     const itemsCell = document.createElement("td");
@@ -1319,6 +1648,30 @@ function renderVendorOrders(stallId) {
     row.append(dateCell, itemsCell, totalCell, paymentCell, statusCell);
     list.appendChild(row);
   });
+
+  let pagination = document.getElementById("vendor-submitted-pagination");
+  if (!pagination) {
+    pagination = document.createElement("nav");
+    pagination.id = "vendor-submitted-pagination";
+    pagination.className = "results-pagination";
+    pagination.setAttribute("aria-label", "Submitted order pages");
+    document.querySelector("#vendor-orders-title").closest("section").appendChild(pagination);
+  }
+  pagination.replaceChildren();
+  if (submittedTotalPages > 1) {
+    for (let page = 1; page <= submittedTotalPages; page++) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = String(page);
+      button.setAttribute("aria-current", String(page === vendorSubmittedPage));
+      button.disabled = page === vendorSubmittedPage;
+      button.addEventListener("click", () => {
+        vendorSubmittedPage = page;
+        renderVendorOrders(stallId);
+      });
+      pagination.appendChild(button);
+    }
+  }
 }
 
 function advanceVendorOrder(orderId, stallId) {
@@ -1327,7 +1680,7 @@ function advanceVendorOrder(orderId, stallId) {
     const orders = storedOrders ? JSON.parse(storedOrders) : [];
     if (!Array.isArray(orders)) throw new Error("Saved order data is invalid.");
     const order = orders.find((entry) => entry && entry.id === orderId && Number(entry.stallId) === Number(stallId));
-    if (!order || order.orderStatus === "completed" || order.demoSample === true) return;
+    if (!order || order.orderStatus === "completed" || order.orderStatus === "cancelled" || order.demoSample === true) return;
     const statusIndex = ORDER_STATUSES.findIndex((entry) => entry.id === order.orderStatus);
     if (statusIndex < 0 || statusIndex >= ORDER_STATUSES.length - 1) {
       throw new Error("This order has an invalid status.");
@@ -1433,6 +1786,53 @@ window.addEventListener("storage", (event) => {
     document.getElementById("vendor-menu-feedback").textContent = `Could not refresh vendor settings: ${err.message}`;
   }
 });
+
+function updateOrderCancellationTimers() {
+  try {
+    const storedOrders = localStorage.getItem(ORDERS_KEY);
+    const orders = storedOrders ? JSON.parse(storedOrders) : [];
+    if (!Array.isArray(orders)) return;
+
+    document.querySelectorAll("[data-cancel-order-id]").forEach((button) => {
+      const order = orders.find((entry) => entry && entry.id === button.dataset.cancelOrderId);
+      if (!order) return;
+      const cancellable = canCancelOrder(order);
+      button.disabled = !cancellable;
+      button.textContent = cancellable
+        ? `Cancel order · ${formatCancelRemaining(order)}`
+        : "Cancellation window closed";
+    });
+
+    if (activeCustomerOrderId) {
+      const activeOrder = orders.find((entry) => entry && entry.id === activeCustomerOrderId);
+      if (activeOrder) {
+        const button = document.getElementById("cancel-active-order");
+        const cancellable = canCancelOrder(activeOrder);
+        button.disabled = !cancellable;
+        button.textContent = cancellable
+          ? `Cancel order · ${formatCancelRemaining(activeOrder)}`
+          : "Cancellation window closed";
+      }
+    }
+
+    const floatingCancel = document.getElementById("floating-order-cancel");
+    if (floatingCancel.dataset.orderId) {
+      const floatingOrder = orders.find((entry) =>
+        entry && entry.id === floatingCancel.dataset.orderId);
+      if (floatingOrder) {
+        const cancellable = canCancelOrder(floatingOrder);
+        floatingCancel.disabled = !cancellable;
+        floatingCancel.textContent = cancellable
+          ? `Cancel order · ${formatCancelRemaining(floatingOrder)}`
+          : "Cancellation window closed";
+      }
+    }
+  } catch (_) {
+    // Cancellation timers are local UI updates and should not interrupt order polling.
+  }
+}
+
+window.setInterval(updateOrderCancellationTimers, 1000);
 
 window.setInterval(() => {
   try {
@@ -1558,6 +1958,7 @@ function openVendorPanel() {
     document.getElementById("vendor-stall-name").textContent = stall.name;
     renderVendorMenu(stall);
     renderVendorOrders(stall.id);
+    renderVendorQueue(stall.id);
   } catch (err) {
     $home.hidden = true;
     $results.hidden = true;
@@ -1748,6 +2149,57 @@ document.getElementById("profile-logout").addEventListener("click", () => {
   showHome();
 });
 
+document.getElementById("vendor-add-customer").addEventListener("click", () => {
+  const form = document.getElementById("vendor-add-customer-form");
+  form.hidden = !form.hidden;
+  if (!form.hidden) document.getElementById("vendor-customer-name").focus();
+});
+
+document.getElementById("vendor-add-customer-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const user = currentUser();
+  if (!user || user.role !== "vendor") return;
+  const name = document.getElementById("vendor-customer-name").value.trim();
+  if (!name) return;
+  const stallId = Number(user.stallId);
+  const { queues, queue } = getVendorQueue(stallId);
+  queue.waiting.push({
+    number: getNextQueueNumber(stallId),
+    name,
+    service: document.getElementById("vendor-customer-service").value,
+  });
+  saveVendorQueues(queues);
+  event.currentTarget.reset();
+  event.currentTarget.hidden = true;
+  renderVendorQueue(stallId);
+});
+
+function updateVendorQueue(action) {
+  const user = currentUser();
+  if (!user || user.role !== "vendor") return;
+  const stallId = Number(user.stallId);
+  const { queues, queue } = getVendorQueue(stallId);
+  if (action === "pause") {
+    queue.paused = !queue.paused;
+  } else if (action === "next" && !queue.paused) {
+    if (queue.nowServing) queue.waiting.unshift(queue.nowServing);
+    queue.nowServing = queue.waiting.shift() || null;
+  } else if (action === "served" && queue.nowServing) {
+    queue.served = (queue.served || 0) + 1;
+    queue.nowServing = null;
+  } else if (action === "skip" && queue.nowServing) {
+    queue.waiting.push(queue.nowServing);
+    queue.nowServing = queue.waiting.shift() || null;
+  }
+  saveVendorQueues(queues);
+  renderVendorQueue(stallId);
+}
+
+document.getElementById("vendor-call-next").addEventListener("click", () => updateVendorQueue("next"));
+document.getElementById("vendor-mark-served").addEventListener("click", () => updateVendorQueue("served"));
+document.getElementById("vendor-skip-customer").addEventListener("click", () => updateVendorQueue("skip"));
+document.getElementById("vendor-pause-queue").addEventListener("click", () => updateVendorQueue("pause"));
+
 document.getElementById("vendor-sound-toggle").addEventListener("click", async (event) => {
   const button = event.currentTarget;
   try {
@@ -1764,6 +2216,46 @@ document.getElementById("vendor-sound-toggle").addEventListener("click", async (
     if (vendorOrderSoundEnabled) playVendorOrderAlert();
   } catch (err) {
     document.getElementById("vendor-order-alert").textContent = err.message;
+  }
+});
+
+document.getElementById("vendor-download-orders").addEventListener("click", () => {
+  const user = currentUser();
+  if (!user || user.role !== "vendor") return;
+  const stall = STALLS.find((entry) => entry.id === Number(user.stallId));
+  if (!stall || !window.jspdf) {
+    document.getElementById("vendor-order-alert").textContent =
+      "Could not create the PDF. Check your internet connection and try again.";
+    return;
+  }
+  try {
+    const storedOrders = localStorage.getItem(ORDERS_KEY);
+    const orders = storedOrders ? JSON.parse(storedOrders) : [];
+    const stallOrders = (Array.isArray(orders) ? orders : [])
+      .filter((order) => order && Number(order.stallId) === Number(stall.id))
+      .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
+    const doc = new window.jspdf.jsPDF();
+    doc.setFontSize(16);
+    doc.text(`${stall.name} - Submitted orders`, 14, 18);
+    doc.setFontSize(10);
+    let y = 28;
+    stallOrders.forEach((order, index) => {
+      if (y > 270) {
+        doc.addPage();
+        y = 18;
+      }
+      const date = new Date(order.createdAt);
+      const dateLabel = !Number.isNaN(date.getTime()) ? date.toLocaleString() : "Date unavailable";
+      doc.text(`${index + 1}. ${dateLabel}`, 14, y);
+      doc.text(`Items: ${String(order.itemSummary || "Unavailable")}`, 14, y + 5);
+      doc.text(`Total: ${peso(Number(order.total) || 0)} | ${orderStatusLabel(order)}`, 14, y + 10);
+      y += 18;
+    });
+    if (!stallOrders.length) doc.text("No submitted orders.", 14, y);
+    doc.save(`${stall.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-orders.pdf`);
+  } catch (err) {
+    document.getElementById("vendor-order-alert").textContent =
+      `Could not create the PDF: ${err.message}`;
   }
 });
 
