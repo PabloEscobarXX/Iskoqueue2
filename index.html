@@ -53,14 +53,11 @@
         <div class="home-chips" id="home-cats"></div>
       </div>
 
-      <section class="promo-banner" aria-label="Featured promotion">
-        <div class="promo-copy">
-          <span class="promo-tag">TODAY'S PICK · SPONSORED</span>
-          <h2>Good food, right around the corner.</h2>
-          <p>Discover campus favorites and order straight from the stall.</p>
-          <button type="button" class="promo-button" id="promo-browse">Explore stalls <span aria-hidden="true">→</span></button>
+      <section class="ad-section" aria-labelledby="ad-section-title">
+        <div class="section-heading">
+          <div><p class="section-kicker">SPONSORED</p><h2 id="ad-section-title">Campus picks</h2></div>
         </div>
-        <div class="promo-art" aria-hidden="true"><span>🍗</span><span>🍟</span><span>🥤</span></div>
+        <div class="ad-grid" id="home-ad-grid"></div>
       </section>
 
       <section class="how-it-works" aria-labelledby="how-title">
@@ -260,19 +257,55 @@
       </div>
     </header>
     <p class="admin-notice">Demo data only, saved in this browser. Sample payments are simulated. For real orders, verify payment externally before confirming an order; this app does not verify or process payments.</p>
-    <details class="admin-card vendor-menu-card">
-      <summary class="vendor-section-summary">
-        <span class="vendor-section-title">
-          <strong>Shop status</strong>
-          <span id="vendor-shop-status" class="vendor-shop-status" role="status" aria-live="polite"></span>
-        </span>
-        <span class="vendor-section-action">Click to open or close your shop</span>
-      </summary>
-      <div class="vendor-section-content">
-        <p>Choose whether customers can place orders from your stall.</p>
-        <button class="vendor-shop-toggle" type="button" id="vendor-shop-toggle">Close shop</button>
-      </div>
-    </details>
+    <div class="vendor-top-grid">
+      <section class="admin-card vendor-status-card">
+        <div class="vendor-status-heading">
+          <div>
+            <strong>Shop status</strong>
+            <span id="vendor-shop-status" class="vendor-shop-status" role="status" aria-live="polite"></span>
+          </div>
+          <button class="vendor-shop-toggle" type="button" id="vendor-shop-toggle">Close shop</button>
+        </div>
+      </section>
+    </div>
+    <section class="vendor-queue-card" aria-labelledby="vendor-queue-title">
+        <div class="vendor-queue-main">
+          <div class="vendor-now-serving">
+            <p>Now serving · General service</p>
+            <strong id="vendor-now-serving">#000</strong>
+            <span id="vendor-now-customer">Queue is empty</span>
+            <small id="vendor-now-status">Waiting for the next customer</small>
+          </div>
+          <div class="vendor-queue-stats">
+            <div><span class="vendor-queue-icon">♟</span><small>Waiting</small><strong id="vendor-queue-waiting">0</strong></div>
+            <div><span class="vendor-queue-icon">◷</span><small>Est. wait</small><strong id="vendor-queue-estimate">0 min</strong></div>
+            <div><span class="vendor-queue-icon">◉</span><small>Served</small><strong id="vendor-queue-served">0</strong></div>
+          </div>
+          <div class="vendor-queue-controls">
+            <h3>Queue controls</h3>
+            <p>Move customers through the line</p>
+            <div class="vendor-queue-actions">
+              <button type="button" id="vendor-call-next">Call next</button>
+              <button type="button" id="vendor-mark-served">Mark served</button>
+              <button type="button" id="vendor-skip-customer">Skip customer</button>
+              <button type="button" id="vendor-pause-queue">Pause queue</button>
+            </div>
+          </div>
+        </div>
+        <aside class="vendor-queue-side">
+          <button type="button" id="vendor-add-customer">+ Add a customer</button>
+          <form id="vendor-add-customer-form" hidden>
+            <label for="vendor-customer-name">Customer name</label>
+            <input id="vendor-customer-name" type="text" required />
+            <label for="vendor-customer-service">Service</label>
+            <select id="vendor-customer-service"><option>General service</option><option>Order pickup</option></select>
+            <button type="submit">Add customer</button>
+          </form>
+          <h3 id="vendor-queue-title">Current queue</h3>
+          <p id="vendor-queue-count">0 customers total</p>
+          <div id="vendor-queue-list"></div>
+        </aside>
+    </section>
     <details class="admin-card vendor-menu-card">
       <summary class="vendor-section-summary">
         <span class="vendor-section-title">
@@ -318,7 +351,10 @@
       <p id="vendor-pending-empty" class="admin-empty">No active orders.</p>
     </section>
     <section class="admin-card" aria-labelledby="vendor-orders-title">
-      <h2 id="vendor-orders-title">Submitted orders</h2>
+      <div class="vendor-orders-heading">
+        <h2 id="vendor-orders-title">Submitted orders</h2>
+        <button class="link-btn" type="button" id="vendor-download-orders">Download PDF</button>
+      </div>
       <div class="admin-table-wrap">
         <table class="admin-table">
           <thead><tr><th scope="col">Date</th><th scope="col">Items</th><th scope="col">Order total</th><th scope="col">Payment</th><th scope="col">Status</th></tr></thead>
@@ -370,6 +406,7 @@
     </header>
 
     <div class="chips" id="chips" role="group" aria-label="Filter by category"></div>
+    <div class="recent-searches" id="recent-searches" hidden></div>
 
     <main class="layout">
       <section class="panel" id="panel">
@@ -465,6 +502,7 @@
           <h3>Order submitted!</h3>
           <p id="order-complete-message"></p>
           <p id="order-vendor-status" class="cart-hint" role="status">Status: Awaiting Confirmation · Waiting for the vendor to confirm.</p>
+          <button class="cart-checkout" type="button" id="cancel-active-order" hidden>Cancel order · 2:00</button>
           <button class="cart-checkout" type="button" id="new-order">Done</button>
         </div>
       </div>
@@ -477,8 +515,26 @@
     <p class="floating-order-items" id="floating-order-items"></p>
     <p class="floating-order-stage" id="floating-order-stage"></p>
     <p class="floating-order-queue" id="floating-order-queue" hidden></p>
+    <button class="floating-order-cancel" type="button" id="floating-order-cancel" hidden>Cancel order · 2:00</button>
     <button class="floating-order-history" type="button" id="floating-order-history">View order history</button>
   </aside>
+
+  <button class="chat-head" id="chat-head" type="button" aria-label="Open order chat" aria-expanded="false" aria-controls="chat-panel" hidden>
+    <span class="chat-head-icon" aria-hidden="true">◉</span>
+    <span class="chat-head-badge" id="chat-head-badge" hidden>0</span>
+  </button>
+  <section class="chat-panel" id="chat-panel" aria-label="Order updates" aria-live="polite" hidden>
+    <header class="chat-panel-header">
+      <div>
+        <strong id="chat-stall-name">Order updates</strong>
+        <span id="chat-stall-status">IskoQueue</span>
+      </div>
+      <button type="button" id="chat-panel-close" aria-label="Close order chat">×</button>
+    </header>
+    <div class="chat-messages" id="chat-messages">
+      <p class="chat-empty">No order updates yet.</p>
+    </div>
+  </section>
 
   <nav class="bottom-nav" id="bottom-nav" aria-label="Main navigation" hidden>
     <button type="button" data-nav="home" aria-pressed="false"><span aria-hidden="true">⌂</span><span>Home</span></button>
@@ -489,6 +545,7 @@
   </nav>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js"></script>
   <script src="data.js"></script>
   <script src="app.js"></script>
 </body>
